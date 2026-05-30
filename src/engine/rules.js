@@ -341,6 +341,13 @@ export function legalMoves(state, map) {
       if (card === WILD) continue; // cannot take a face-up wild as 2nd card
       moves.push({ type: DRAW_FACEUP, slot });
     }
+    // No legal second draw (deck+discard exhausted, only wild/empty face-up
+    // slots remain): the player forfeits the second draw via PASS. legalMoves
+    // must never return [] for a live state. (game.js also auto-ends a turn when
+    // no second draw is possible, so reaching here is a belt-and-suspenders case.)
+    if (moves.length === 0) {
+      moves.push({ type: PASS });
+    }
     return moves;
   }
 

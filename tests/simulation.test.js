@@ -176,6 +176,8 @@ function sameAction(a, b) {
       return true;
     case 'KEEP_TICKETS':
       return sameSet(a.keep, b.keep);
+    case 'PASS':
+      return true;
     default:
       return false;
   }
