@@ -78,18 +78,22 @@ bottom. See [[CLAUDE]] for what each entry type means.
   - **minor/nit** — removed dead `turnStartTickets`; documented `moveCount` and
     `PASS` in `CONTRACT.md`; clarified `STARTING_TICKETS_KEEP_MIN`.
   - The 2 refuted findings were correctly not acted on.
-- The deadlock fix took **two** commits and I learned a lesson: in commit
-  `8a4e7af` I batched the `git commit` in the *same step* as the gating test run,
-  so I committed before seeing the result — and an editing slip had left the
-  `legalMoves` `PASS` branch out, so 5 property tests were still red and the
-  commit message's "87/87" was wrong. `57b7e85` added the missing branch; the
-  full suite was then re-run and observed **87/87 green before committing**.
+- The deadlock fix actually took **three** commits, and there's a real lesson in
+  that. In `30ed17f` I batched the `git commit` in the *same step* as the gating
+  test run, so I committed before seeing results — and an editing slip had left
+  the start-of-turn `PASS` branch out of `legalMoves`, so 5 property tests were
+  still red and that commit's "87/87" claim was wrong. `671bfd2` added the
+  start-of-turn branch (→ 86/87). One property test still failed: a *mid-draw*
+  player with no legal second draw (deck+discard empty, only a wild/empty
+  face-up) hit a separate early `return` in `legalMoves` that also bypassed the
+  `PASS` fallback. `4d9f0a2` fixed that branch too. Only then was the full suite
+  re-run **in isolation and observed 87/87 green before committing**.
   Rule going forward: never commit in the same step as the test run that gates it.
-- **`npm test` → 87/87 pass.** Validator clean. `tools/simulate.js` plays full
-  games to completion. Filled in [[ai]], [[ui]], [[testing]] from stubs.
-- **Commits:** `8a4e7af` (clients + first deadlock fixes), `2532f1f` (wiki fill),
-  `94b00cc` (SVG board renderer + `assets/board.svg`), `57b7e85` (complete the
-  deadlock fix).
+- **`npm test` → 87/87 pass** (verified). Validator clean. `tools/simulate.js`
+  plays full games to completion. Filled in [[ai]], [[ui]], [[testing]] from stubs.
+- **Commits:** `30ed17f` (clients + first deadlock fixes), `2532f1f` (wiki fill),
+  `94b00cc` (SVG board renderer + `assets/board.svg`), `671bfd2` (start-of-turn
+  `PASS`), `119d56c` (log rewrite), `4d9f0a2` (mid-draw `PASS` — suite green).
 
 ### 2026-05-30 — Wiki lint
 - No orphans: every page is reachable from [[index]]. No real dangling links:
