@@ -369,6 +369,14 @@ export function legalMoves(state, map) {
     moves.push({ type: DRAW_TICKETS });
   }
 
+  // If the player has NO legal action (deck+discard exhausted, no drawable
+  // face-up card, no claimable route, no tickets to draw), the only legal move
+  // is to PASS — otherwise the game would dead-end. Mirrors the official rule
+  // that a player who cannot act forfeits their turn.
+  if (moves.length === 0) {
+    moves.push({ type: PASS });
+  }
+
   return moves;
 }
 
