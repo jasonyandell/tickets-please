@@ -58,3 +58,34 @@ bottom. See [[CLAUDE]] for what each entry type means.
   **Canvas UI** (`src/ui/` + pure `layout.js` geometry tests).
 - Awaiting results; will apply any confirmed audit fixes, re-run the full suite,
   then update [[ai]], [[ui]], [[testing]].
+
+### 2026-05-30 — Clients landed; deadlocks found & fixed (ingest + lint)
+- Workflow completed (14 agents). Built: [[ai]] (`src/ai/ai.js`, 7 tests, 180
+  stress games clean), [[ui]] (`src/ui/` Canvas board + pure `layout.js`, 11
+  geometry tests), and the simulation/property harness (`tools/simulate.js`,
+  `tests/simulation.test.js`).
+- **Adversarial audit** produced 7 raw findings; independent skeptic agents
+  refuted 2 and confirmed 5. The **property tests** independently caught a real
+  deadlock. Fixes applied by me to the engine:
+  - **CRITICAL — turn-flow dead-end.** At card exhaustion a player could draw a
+    first card with no legal second draw, or face a turn with no legal action at
+    all, and the game froze (`legalMoves → []`). Fix: a first draw with no
+    possible second draw auto-ends the turn; a genuinely stuck player uses a new
+    `PASS` action (legal only when forced); a fully frozen table ends the game.
+    Resolved all 5 deadlocking seeds (5p, seeds 2/13/21/42/99).
+  - **MAJOR — `map.tickets` undefined.** `KEEP_TICKETS` resolved tickets via
+    `map.tickets`, but `MAP` didn't carry them → mid-game ticket draws threw on
+    the real board. Fix: `MAP.tickets = TICKETS` in `map.js`.
+  - **minor** — `legalMoves` now returns `[]` when `phase==='ended'`.
+  - **minor/nit** — removed dead `turnStartTickets`; documented `moveCount` and
+    `PASS` in `CONTRACT.md`; clarified `STARTING_TICKETS_KEEP_MIN`.
+  - Two findings (refuted/non-bugs) were correctly not acted on.
+- **`npm test` → 87/87 pass.** Validator clean. `tools/simulate.js` plays full
+  games to completion. Filled in [[ai]], [[ui]], [[testing]] from stubs.
+- **Commit `8a4e7af`** — "Clients (AI, UI, sim) + fix engine deadlocks".
+
+### 2026-05-30 — Wiki lint
+- No orphans: every page is reachable from [[index]]. No dangling links: all
+  `[[…]]` targets exist. Numbers on [[map]]/[[scoring]]/[[testing]] reconciled
+  with the code (76 routes, 37 tickets, 87 tests). The earlier environment
+  incident ([[workflows]]/beads) is recorded above for timeline completeness.
