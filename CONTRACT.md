@@ -45,6 +45,10 @@ export const TICKETS = [
   { id: 't1', from: 'sea', to: 'nyc', points: 22 },
   // from/to are city ids; points is the ticket value (completed: +points,
   // incomplete at game end: -points). Order-insensitive.
+  // NOTE: the engine resolves kept ticket ids via `map.tickets`, so the MAP
+  // object must also carry the ticket list: `MAP.tickets = TICKETS` (the real
+  // map.js does this). A `map` value passed to the engine is { cities, routes,
+  // tickets }.
 ];
 ```
 
@@ -88,7 +92,7 @@ state = {
     minKeep: number,
   },
   cardsDrawnThisTurn: number,  // 0,1,2; turn ends after 2 (or 1 if a wild was taken face-up)
-  turnStartTickets: boolean,   // true only on a player's very first action availability (see DRAW_TICKETS legality)
+  moveCount: number,       // increments every applied action; seeds mid-game rng (see §7)
   log: string[],
   winner: number[] | null, // set when phase === 'ended' (ties allowed)
 };
@@ -112,7 +116,16 @@ tickets (simplest correct behavior) — the AI/UI may override.
 { type: 'CLAIM_ROUTE', routeId, spend: { [color]: count } }
 { type: 'DRAW_TICKETS' }           // -> sets state.pending (kind:'tickets')
 { type: 'KEEP_TICKETS', keep: string[] }  // resolve pending; keep ⊆ offered, |keep| >= minKeep
+{ type: 'PASS' }                   // forfeit turn; legal ONLY when no other move exists
 ```
+
+`PASS` models the official rule that a player who cannot draw cards (deck and
+discard exhausted, no drawable face-up card), cannot claim any route, and cannot
+draw tickets simply forfeits their turn. It is the only legal move in that
+situation; `legalMoves` returns exactly `[{type:'PASS'}]` and `applyAction`
+rejects a `PASS` whenever any other move is available. If a `PASS` occurs and no
+player can claim any route either, the game state is frozen and the engine ends
+the game (computing the winner from `finalScores`).
 
 ## 5. Rules (`src/engine/rules.js`)
 

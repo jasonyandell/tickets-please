@@ -172,7 +172,6 @@ export function initGame({ map, tickets, playerConfigs, seed = 1 }) {
     finalTurnsLeft: null,
     pending: null,
     cardsDrawnThisTurn: 0,
-    turnStartTickets: true,
     moveCount: 0,
     log: [],
     winner: null,

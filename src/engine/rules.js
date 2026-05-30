@@ -31,6 +31,7 @@ import {
   CLAIM_ROUTE,
   DRAW_TICKETS,
   KEEP_TICKETS,
+  PASS,
 } from './actions.js';
 
 // ---------------------------------------------------------------------------
@@ -306,6 +307,11 @@ export function canonicalSpend(hand, route, _map) {
  */
 export function legalMoves(state, map) {
   const moves = [];
+
+  // --- 0. A finished game has no legal moves ------------------------------
+  // (applyAction rejects everything once phase === 'ended'; legalMoves must
+  // agree so callers like the AI never see a move the reducer will throw on.)
+  if (state.phase === 'ended') return moves;
 
   // --- 1. Pending ticket choice -------------------------------------------
   if (state.pending && state.pending.kind === 'tickets') {

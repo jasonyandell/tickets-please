@@ -12,7 +12,7 @@
 
 import { cloneState, refillFaceUp } from './state.js';
 import { makeRng, shuffle } from './rng.js';
-import { canClaimRoute } from './rules.js';
+import { canClaimRoute, canonicalSpend, legalMoves } from './rules.js';
 import { routeScore, finalScores } from './scoring.js';
 import {
   DRAW_DECK,
@@ -20,6 +20,7 @@ import {
   CLAIM_ROUTE,
   DRAW_TICKETS,
   KEEP_TICKETS,
+  PASS,
 } from './actions.js';
 import { WILD, TICKETS_DEAL, TICKETS_KEEP_MIN, ENDGAME_TRAIN_THRESHOLD } from './constants.js';
 
@@ -63,12 +64,50 @@ function drawTop(state) {
   return state.deck.pop();
 }
 
+// Can the current player legally draw a SECOND train card right now? A second
+// draw may come from the deck (blind — reshuffles discard if needed) or from any
+// non-wild face-up card (a face-up wild may not be taken as the second card).
+// Mirrors the mid-draw branch of rules.legalMoves. Used to auto-end a turn that
+// has no legal continuation, so the game can never dead-end after the first draw.
+function canDrawSecond(state) {
+  if (state.deck.length > 0 || state.discard.length > 0) return true;
+  return state.faceUp.some((c) => c != null && c !== WILD);
+}
+
+// Transition a (cloned) state to phase 'ended' and compute the winner(s) as the
+// player(s) with the maximum total in finalScores (ties => multiple winners).
+function finalizeGame(state, map, reason) {
+  state.phase = 'ended';
+  const scores = finalScores(state, map);
+  let max = -Infinity;
+  for (const s of scores) if (s.total > max) max = s.total;
+  state.winner = scores.filter((s) => s.total === max).map((s) => s.playerId);
+  state.log.push(
+    `Game ended${reason ? ` (${reason})` : ''}. Winner(s): ${state.winner.join(', ')}`
+  );
+}
+
+// Could ANY player legally claim ANY route right now? Used only when a PASS is
+// being applied (deck/discard/face-up/tickets are all exhausted, so claiming is
+// the only remaining way for the game to make progress). If no one can claim,
+// the game state is frozen forever and must end.
+function anyPlayerCanClaim(state, map) {
+  for (const p of state.players) {
+    for (const route of map.routes) {
+      if (state.routeOwner[route.id] != null) continue;
+      const spend = canonicalSpend(p.hand, route, map);
+      if (!spend) continue;
+      if (canClaimRoute(state, p.id, route.id, spend, map).ok) return true;
+    }
+  }
+  return false;
+}
+
 // Advance the game to the next player and handle end-game bookkeeping.
 // `mover` is the player object (in the cloned state) who just acted.
 function endTurn(state, map, mover) {
   state.moveCount += 1;
   state.cardsDrawnThisTurn = 0;
-  state.turnStartTickets = false;
 
   // Snapshot whether the final round was ALREADY active before this turn. Only
   // turns taken while the round is already active consume a final-turn slot —
@@ -89,14 +128,8 @@ function endTurn(state, map, mover) {
   if (wasFinalRound) {
     state.finalTurnsLeft -= 1;
     if (state.finalTurnsLeft <= 0) {
-      state.phase = 'ended';
       state.finalTurnsLeft = 0;
-      const scores = finalScores(state, map);
-      let max = -Infinity;
-      for (const s of scores) if (s.total > max) max = s.total;
-      const winners = scores.filter((s) => s.total === max).map((s) => s.playerId);
-      state.winner = winners;
-      state.log.push(`Game ended. Winner(s): ${winners.join(', ')}`);
+      finalizeGame(state, map);
     }
   }
 }
@@ -145,10 +178,8 @@ export function applyAction(state, action, map) {
       next.cardsDrawnThisTurn += 1;
       next.log.push(`P${player.id} drew a card from the deck`);
 
-      // End the turn at 2, or early if no card remains for a second draw.
-      ensureDeck(next, rng);
-      const noMore = next.deck.length === 0;
-      if (next.cardsDrawnThisTurn >= 2 || noMore) {
+      // End the turn at 2, or early if no legal second draw remains.
+      if (next.cardsDrawnThisTurn >= 2 || !canDrawSecond(next)) {
         endTurn(next, map, player);
       }
       return next;
@@ -185,7 +216,9 @@ export function applyAction(state, action, map) {
 
       next.cardsDrawnThisTurn += 1;
       next.log.push(`P${player.id} took a face-up ${card}`);
-      if (next.cardsDrawnThisTurn >= 2) {
+      // End at 2, or early if no legal second draw remains (prevents a dead-end
+      // where one card is drawn but no further draw is possible).
+      if (next.cardsDrawnThisTurn >= 2 || !canDrawSecond(next)) {
         endTurn(next, map, player);
       }
       return next;
@@ -260,6 +293,28 @@ export function applyAction(state, action, map) {
 
       next.pending = null;
       next.log.push(`P${player.id} kept ${keep.length} tickets`);
+      endTurn(next, map, player);
+      return next;
+    }
+
+    case PASS: {
+      // PASS is legal only when the player is genuinely out of options. Confirm
+      // by checking the legal-move set is exactly [PASS].
+      const lm = legalMoves(next, map);
+      const forced = lm.length === 1 && lm[0].type === PASS;
+      if (!forced) {
+        throw new Error('applyAction: PASS is illegal while other moves exist');
+      }
+      next.log.push(`P${player.id} passed (no legal action)`);
+      // When a PASS happens, deck+discard+face-up+tickets are all exhausted, so
+      // the only way the game can progress is another player claiming a route.
+      // If nobody can claim, the state is frozen forever — end the game now.
+      if (!anyPlayerCanClaim(next, map)) {
+        next.moveCount += 1;
+        next.cardsDrawnThisTurn = 0;
+        finalizeGame(next, map, 'no player can move');
+        return next;
+      }
       endTurn(next, map, player);
       return next;
     }

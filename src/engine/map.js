@@ -196,3 +196,9 @@ export const TICKETS = [
   { id: 't-pit-mem', from: 'pit', to: 'mem', points: 8 },
   { id: 't-bil-oma', from: 'bil', to: 'oma', points: 7 },
 ];
+
+// Attach the ticket list to MAP so a single `map` value is self-contained: the
+// engine resolves kept ticket ids via `map.tickets` (game.js), and CONTRACT.md
+// §2 specifies a MAP carries { cities, routes, tickets }. TICKETS remains a
+// separate named export for callers that want just the ticket deck.
+MAP.tickets = TICKETS;

@@ -6,9 +6,14 @@ export const DRAW_DECK = 'DRAW_DECK';
 export const CLAIM_ROUTE = 'CLAIM_ROUTE';
 export const DRAW_TICKETS = 'DRAW_TICKETS';
 export const KEEP_TICKETS = 'KEEP_TICKETS';
+// PASS is legal ONLY when the current player has no other legal action (deck and
+// discard exhausted, no drawable face-up card, no claimable route, no tickets to
+// draw). It simply ends the turn. See CONTRACT.md §4/§5 and game.js.
+export const PASS = 'PASS';
 
 export const drawFaceUp = (slot) => ({ type: DRAW_FACEUP, slot });
 export const drawDeck = () => ({ type: DRAW_DECK });
 export const claimRoute = (routeId, spend) => ({ type: CLAIM_ROUTE, routeId, spend });
 export const drawTickets = () => ({ type: DRAW_TICKETS });
 export const keepTickets = (keep) => ({ type: KEEP_TICKETS, keep });
+export const pass = () => ({ type: PASS });

@@ -41,7 +41,13 @@ export const STARTING_TRAINS = 45;
 /** Train-car cards dealt to each player at the start. */
 export const STARTING_HAND = 4;
 
-/** Destination tickets dealt at the start; players must keep at least 2. */
+/**
+ * Destination tickets dealt at the start. In the full rules a player keeps at
+ * least STARTING_TICKETS_KEEP_MIN of the deal and may discard the rest. This
+ * engine's default `initGame` applies the simplest correct rule — keep all
+ * starting tickets — so STARTING_TICKETS_KEEP_MIN is reserved for clients that
+ * implement the optional choose-which starting selection (see CONTRACT.md §3).
+ */
 export const STARTING_TICKETS_DEAL = 3;
 export const STARTING_TICKETS_KEEP_MIN = 2;
 

@@ -1,0 +1,208 @@
+/* tickets-please UI — zero-dependency styles */
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  color: #1a1a1a;
+  background: #d9e0d9;
+}
+
+#app {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+#board {
+  flex: 1 1 auto;
+  position: relative;
+  min-width: 0;
+  background: #cfd8cf;
+}
+
+#map {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+
+#panel {
+  flex: 0 0 320px;
+  width: 320px;
+  height: 100%;
+  overflow-y: auto;
+  background: #f6f7f6;
+  border-left: 1px solid #c4ccc4;
+  padding: 12px;
+  font-size: 13px;
+}
+
+/* ---- controls ---- */
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #d8ded8;
+  margin-bottom: 10px;
+}
+
+.controls select,
+button {
+  font: inherit;
+  padding: 6px 8px;
+  border: 1px solid #9aa39a;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+button:hover:not(:disabled) { background: #eef2ee; }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+button.primary { background: #2a6ad2; color: #fff; border-color: #2a6ad2; }
+button.primary:hover { background: #2358b0; }
+
+.toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid rgba(0,0,0,0.3);
+  flex: 0 0 auto;
+}
+
+/* ---- banner ---- */
+.banner {
+  padding: 8px 10px;
+  border: 2px solid #888;
+  border-radius: 8px;
+  font-weight: 600;
+  margin-bottom: 10px;
+  background: #fff;
+}
+.banner.over { background: #fff3d6; border-color: #e0a82e; }
+
+/* ---- actions ---- */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.actions button { flex: 1 1 auto; }
+
+.ticketChoice {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 8px;
+  background: #eef4ff;
+  border: 1px solid #b8ccf0;
+  border-radius: 6px;
+}
+
+/* ---- face-up ---- */
+.faceup { margin-bottom: 12px; }
+.cardrow { display: flex; gap: 6px; flex-wrap: wrap; }
+.card {
+  width: 34px;
+  height: 48px;
+  border-radius: 5px;
+  border: 1px solid rgba(0,0,0,0.4);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+  box-shadow: inset 0 0 0 2px rgba(255,255,255,0.2);
+}
+.card.clickable { cursor: pointer; }
+.card.clickable:hover { outline: 2px solid #111; outline-offset: 1px; }
+
+/* ---- players ---- */
+.player {
+  border-left: 4px solid #888;
+  padding: 6px 8px;
+  margin-bottom: 10px;
+  background: #fff;
+  border-radius: 0 6px 6px 0;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+}
+.phead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.phead.active { background: #fff7e0; border-radius: 4px; padding: 2px 4px; }
+.score { margin-left: auto; font-variant-numeric: tabular-nums; color: #444; }
+
+.hand {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0;
+}
+.pipgrp { display: inline-flex; align-items: center; gap: 1px; }
+.pip {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid rgba(0,0,0,0.35);
+}
+.pipcount { font-size: 11px; color: #444; margin-left: 2px; }
+.pipmore { font-size: 10px; color: #666; }
+
+.tickets { margin-top: 6px; }
+.tkrow { font-size: 12px; line-height: 1.5; }
+.done { color: #2a9d3a; font-weight: 700; }
+.notdone { color: #c0392b; font-weight: 700; }
+
+/* ---- log ---- */
+.logwrap { margin-top: 8px; }
+.log {
+  max-height: 160px;
+  overflow-y: auto;
+  background: #1e2420;
+  color: #cfe;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+.logline { white-space: pre-wrap; line-height: 1.4; }
+
+.label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #667;
+  margin: 4px 0 2px;
+  font-weight: 600;
+}
+.note { font-size: 12px; color: #778; font-style: italic; }
+
+@media (max-width: 720px) {
+  #app { flex-direction: column; }
+  #panel { flex-basis: auto; width: 100%; height: 45%; border-left: none; border-top: 1px solid #c4ccc4; }
+  #board { height: 55%; }
+}
