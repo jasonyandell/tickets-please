@@ -18,3 +18,12 @@ bottom. See [[CLAUDE]] for what each entry type means.
   [[game-rules]], [[engine-api]], plus stubs for [[map]], [[ai]], [[ui]],
   [[testing]], [[scoring]], [[determinism]], [[design-decisions]], [[workflows]],
   [[glossary]].
+- Added `README.md`, `tools/validate-map.js`, `tools/serve.js`.
+- **Commit `cd0d213`** — "Foundation: engine primitives, contract, first-class wiki".
+
+### 2026-05-30 — Engine build workflow launched (ingest)
+- Launched the contract-first fan-out (see [[workflows]] phase 2–3): one workflow
+  building, in parallel, the US [[map]] (validator-gated) + `scoring.js` +
+  `rules.js`, then the `game.js` orchestrator that depends on them. Each module
+  ships with a `node:test` suite the agent must drive to green.
+- Awaiting results before verifying integration and building the [[ai]]/[[ui]].
