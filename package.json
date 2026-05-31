@@ -10,11 +10,22 @@
     "serve": "node tools/serve.js",
     "validate": "node tools/validate-map.js",
     "build": "node tools/build.js",
-    "deploy": "node tools/build.js && wrangler deploy"
+    "deploy": "node tools/build.js && wrangler deploy",
+    "test:e2e": "playwright test -c playwright.config.js"
   },
-  "keywords": ["game", "board-game", "ticket-to-ride", "railway", "public-domain", "zero-dependency"],
+  "keywords": [
+    "game",
+    "board-game",
+    "ticket-to-ride",
+    "railway",
+    "public-domain",
+    "zero-dependency"
+  ],
   "author": "Public Domain",
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0"
   }
 }
