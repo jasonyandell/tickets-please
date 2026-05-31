@@ -1,20 +1,26 @@
-<!DOCTYPE html>
+<!doctype html>
+<!--
+  tickets-please — browser entry point. Zero dependency: loads the ES-module UI
+  controller (main.js), which imports the engine and AI directly. No bundler.
+  The UI controller binds to #board (canvas) and #panel (side panel).
+-->
 <html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>tickets-please</title>
-  <link rel="stylesheet" href="./style.css" />
-</head>
-<body>
-  <div id="app">
-    <main id="board">
-      <canvas id="map" width="900" height="700"></canvas>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>tickets-please 🚂</title>
+    <meta
+      name="description"
+      content="A free, public-domain Ticket to Ride-style railway game. Zero dependencies."
+    />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main id="app">
+      <canvas id="board" width="1200" height="760"></canvas>
+      <aside id="panel"></aside>
     </main>
-    <aside id="panel" aria-label="game panel">
-      <!-- populated by main.js -->
-    </aside>
-  </div>
-  <script type="module" src="./main.js"></script>
-</body>
+    <noscript>tickets-please needs JavaScript enabled to play.</noscript>
+    <script type="module" src="./main.js"></script>
+  </body>
 </html>

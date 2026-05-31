@@ -5,6 +5,10 @@ A free, open-source, **public-domain** railway route game in the lineage of
 and complete secret destination tickets. **Zero dependencies.** Pure ES-module
 engine that runs in Node *and* the browser.
 
+**▶ Play it live: https://tickets-please.jason-c5e.workers.dev**
+
+[![Deploy to Cloudflare](https://github.com/jasonyandell/tickets-please/actions/workflows/deploy.yml/badge.svg)](https://github.com/jasonyandell/tickets-please/actions/workflows/deploy.yml)
+
 > Built live as a demonstration of **workflow-orchestrated development** with
 > Claude Code — see [`wiki/workflows.md`](wiki/workflows.md). The `wiki/` is a
 > first-class artifact: an LLM-maintained knowledge base. Start at
@@ -24,7 +28,16 @@ lands — see the [build log](wiki/log.md).)
 ```bash
 npm test          # node --test over tests/  (zero dependencies)
 npm run validate  # check the map against its invariants
+npm run build     # assemble the deployable static site into dist/
 ```
+
+## Deploy
+
+Hosted free on **Cloudflare Workers** (static assets), auto-deployed on every
+push to `main` via GitHub Actions (`.github/workflows/deploy.yml`): the workflow
+runs the test suite + map validation, then builds `dist/` and publishes. Config
+is in `wrangler.toml`. Manual deploy: `npm run deploy` (needs
+`CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`).
 
 ## How it's built
 

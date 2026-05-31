@@ -1,0 +1,7 @@
+# Cloudflare Workers static-assets config for tickets-please.
+# Pure static site (no Worker script): the built dist/ is served from the edge.
+name = "tickets-please"
+compatibility_date = "2024-09-30"
+
+[assets]
+directory = "./dist"
