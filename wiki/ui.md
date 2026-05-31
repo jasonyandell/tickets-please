@@ -1,9 +1,15 @@
 # UI
 
-A zero-dependency, browser-native UI: HTML5 **Canvas** + ES modules, no build
-step. Launch with `npm run serve` (then open the printed URL) or open
-`src/ui/index.html` directly. See [[architecture]] for how it relates to the
-engine.
+A zero-dependency, browser-native UI: HTML5 **Canvas** + ES modules. The shipped
+game has no runtime dependencies. Launch with `npm run serve` — it builds the
+static site into `dist/` (via `tools/build.js`) and serves *that*, so local play,
+the [[browser-verify|e2e suite]], and production ([[deployment]]) all exercise the
+identical artifact. See [[architecture]] for how it relates to the engine.
+
+> The canvas element id is `map` (matched by `main.js:getElementById('map')` and
+> `style.css`). A mismatch here, or serving raw `src/` instead of the built
+> `dist/`, blanks the whole board — both bugs actually happened and are now
+> guarded by [[browser-verify]]. See `wiki/log.md` (2026-05-30 render-bug entry).
 
 ## Files (`src/ui/`)
 - `index.html` — the page: a `<canvas>` board plus a side panel (current player,
@@ -30,8 +36,12 @@ The UI holds the current `state`, renders it, turns input into
 collects input.
 
 ## Testing
-`tests/layout.test.js` (11 tests) covers the pure geometry: box counts equal
-route length, hit-testing returns the right route on a segment and `null` off it,
-and double routes get two distinct offset lines. The interactive canvas/click
-path can't run headlessly here, so the geometry is isolated into `layout.js` and
-tested directly; `main.js`/`render.js` are verified to parse. See [[testing]].
+Two layers:
+- `tests/layout.test.js` (11 tests) covers the **pure geometry**: box counts equal
+  route length, hit-testing returns the right route on a segment and `null` off
+  it, double routes get two distinct offset lines. (`node:test`, zero deps.)
+- **Real-browser rendering** via [[browser-verify]] (`npm run test:e2e`,
+  Playwright, dev-only): loads the built site, asserts zero app errors and that
+  the canvas is actually painted (hundreds of distinct colors, not blank), and
+  saves `artifacts/board.png` as evidence. This catches the class of bug unit
+  tests can't — a null DOM ref or a 404 that blanks the page. See [[testing]].

@@ -27,6 +27,7 @@ and [[log]] for the chronological build record.
 - [[ai]] — how the computer opponents choose moves.
 - [[ui]] — the canvas renderer and interaction model.
 - [[testing]] — how correctness is guaranteed; how to run the suite.
+- [[browser-verify]] — the self-improving skill that proves the UI renders.
 
 ## Process
 - [[workflows]] — how this project was (and is) built with agent orchestration.
