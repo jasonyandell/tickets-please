@@ -114,3 +114,20 @@ _(The TEST-bug fix + this log rewrite landed as commit `62fba9c`.)_
   *examples* inside [[CLAUDE]] (the schema doc), which are intentional.
 - Numbers reconciled with code: 76 routes, 37 tickets, 87 tests.
 - `turnStartTickets` fully eliminated (0 refs in `src`/`tests`/`CONTRACT.md`).
+
+### 2026-05-30 — Shipped: GitHub + Cloudflare deploy (ingest)
+- Created the public repo **github.com/jasonyandell/tickets-please** and deployed
+  to **Cloudflare Workers** free tier with GitHub Actions CI/CD (via the
+  `deploy-cloudflare-pwa` skill). **Live:**
+  https://tickets-please.jason-c5e.workers.dev — see [[deployment]].
+- Added `tools/build.js` (zero-dep: assembles `dist/` with a root index.html over
+  the `src/` tree), `wrangler.toml`, `.github/workflows/deploy.yml` (test+validate
+  gate → build → deploy), and `npm run build`/`deploy` scripts.
+- Cleaned up a malformed `src/ui/index.html` (it had duplicated `<script>`/
+  `<noscript>` tags and a misplaced `<body>`) — rewritten clean, binds `#board`
+  + `#panel`.
+- Verified independently (tool-output "bleed" from background dev servers made
+  console output unreliable, so I confirmed via marker-wrapped `curl`): live root
+  + all JS modules + CSS return **200** with `text/javascript` MIME; the first CI
+  run's **test and deploy jobs both succeeded**.
+- New page: [[deployment]]. Added the live URL to [[index]] and `README.md`.
