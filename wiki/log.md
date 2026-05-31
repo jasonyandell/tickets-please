@@ -87,7 +87,7 @@ Chronological record of ingests, queries, and lints. Newest at the bottom. See
 
 _(The TEST-bug fix + this log rewrite landed as commit `62fba9c`.)_
 
-### 2026-05-30 — Independent final verification (query) · commit `ad8f8c2`
+### 2026-05-30 — Independent final verification (query) · commit `134c1c1`
 - Ran a final read-only verification workflow (8 agents): reviewed the
   hand-written engine fixes, the UI↔engine wiring, and wiki accuracy against the
   code, each finding adversarially verified (refute-by-default). Result: **0
