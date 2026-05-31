@@ -5,7 +5,7 @@ A free, open-source, **public-domain** railway route game in the lineage of
 and complete secret destination tickets. **Zero dependencies.** Pure ES-module
 engine that runs in Node *and* the browser.
 
-**▶ Play it live: https://tickets-please.jason-c5e.workers.dev**
+**▶ Play it live: https://tickets-please.jasonyandell.workers.dev**
 
 [![Deploy to Cloudflare](https://github.com/jasonyandell/tickets-please/actions/workflows/deploy.yml/badge.svg)](https://github.com/jasonyandell/tickets-please/actions/workflows/deploy.yml)
 

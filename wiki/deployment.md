@@ -3,7 +3,7 @@
 `tickets-please` is hosted free on **Cloudflare Workers** (static assets) and
 **auto-deploys on every push to `main`** via GitHub Actions.
 
-- **Live:** https://tickets-please.jason-c5e.workers.dev
+- **Live:** https://tickets-please.jasonyandell.workers.dev
 - **Repo:** https://github.com/jasonyandell/tickets-please
 
 ## How it works

@@ -17,7 +17,7 @@ and [[log]] for the chronological build record.
 - [[scoring]] — exact point values and the longest-path bonus.
 - [[map]] — the United States map: cities, routes, destination tickets.
 
-> **▶ Play it live:** https://tickets-please.jason-c5e.workers.dev — see [[deployment]].
+> **▶ Play it live:** https://tickets-please.jasonyandell.workers.dev — see [[deployment]].
 
 ## Engineering
 - [[architecture]] — module map and data flow.

@@ -5,8 +5,8 @@
   "type": "module",
   "license": "Unlicense",
   "scripts": {
-    "test": "node --test 'tests/**/*.test.js'",
-    "test:watch": "node --test --watch 'tests/**/*.test.js'",
+    "test": "node --test tests/*.test.js",
+    "test:watch": "node --test --watch tests/*.test.js",
     "serve": "node tools/serve.js",
     "validate": "node tools/validate-map.js",
     "build": "node tools/build.js",

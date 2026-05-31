@@ -119,7 +119,7 @@ _(The TEST-bug fix + this log rewrite landed as commit `62fba9c`.)_
 - Created the public repo **github.com/jasonyandell/tickets-please** and deployed
   to **Cloudflare Workers** free tier with GitHub Actions CI/CD (via the
   `deploy-cloudflare-pwa` skill). **Live:**
-  https://tickets-please.jason-c5e.workers.dev — see [[deployment]].
+  https://tickets-please.jasonyandell.workers.dev — see [[deployment]].
 - Added `tools/build.js` (zero-dep: assembles `dist/` with a root index.html over
   the `src/` tree), `wrangler.toml`, `.github/workflows/deploy.yml` (test+validate
   gate → build → deploy), and `npm run build`/`deploy` scripts.
@@ -131,3 +131,18 @@ _(The TEST-bug fix + this log rewrite landed as commit `62fba9c`.)_
   + all JS modules + CSS return **200** with `text/javascript` MIME; the first CI
   run's **test and deploy jobs both succeeded**.
 - New page: [[deployment]]. Added the live URL to [[index]] and `README.md`.
+
+### 2026-05-30 — Deploy corrections (lint)
+- The first CI run **failed at the test job** (deploy skipped): `npm test` used a
+  Node-glob (`tests/**/*.test.js`) that needs Node 21+, but CI runs Node 20.
+  Fixed to a **shell-expanded** glob `node --test tests/*.test.js` (Node receives
+  explicit paths; version-independent). Verified exit 0, 87/87.
+- Corrected two of my own mistakes: (1) I had set the GitHub secrets from the
+  wrong keychain key (empty) — re-set `CLOUDFLARE_API_TOKEN` from
+  `cloudflare-workers-deploy-token` and `CLOUDFLARE_ACCOUNT_ID` to the real
+  account id (per the `deploy-cloudflare-pwa` skill). (2) The live URL is
+  `tickets-please.jasonyandell.workers.dev` — I had hallucinated `jason-c5e`;
+  fixed in `README.md`, [[index]], [[deployment]], and here.
+- Aligned `wrangler.toml` with the skill (`not_found_handling = single-page-application`).
+- Note: the local OAuth `wrangler deploy` had already published the site
+  successfully; this round makes the **CI** path green too.
