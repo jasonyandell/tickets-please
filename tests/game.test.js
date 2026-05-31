@@ -53,7 +53,6 @@ function makeState(overrides = {}) {
     finalTurnsLeft: null,
     pending: null,
     cardsDrawnThisTurn: 0,
-    turnStartTickets: false,
     moveCount: 0,
     log: [],
     winner: null,

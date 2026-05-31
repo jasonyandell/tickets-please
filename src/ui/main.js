@@ -14,11 +14,13 @@ import {
   claimRoute,
   drawTickets,
   keepTickets,
+  pass,
   DRAW_DECK,
   DRAW_FACEUP,
   CLAIM_ROUTE,
   DRAW_TICKETS,
   KEEP_TICKETS,
+  PASS,
 } from '../engine/actions.js';
 import { legalMoves, canonicalSpend, isTurnOver } from '../engine/rules.js';
 import { applyAction } from '../engine/game.js';

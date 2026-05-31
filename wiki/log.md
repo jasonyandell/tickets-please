@@ -5,7 +5,9 @@ Chronological record of ingests, queries, and lints. Newest at the bottom. See
 
 > This file was rewritten clean on 2026-05-30 after an episode of premature
 > "green" claims and a referenced commit hash that never existed (an edit that
-> had silently failed). All commit hashes below are verified against `git log`,
+> had silently failed). Commit hashes below are verified against `git log`
+> (except the hash *of the commit that introduces a given entry*, which isn't
+> knowable until that commit is made — those are backfilled by the next entry),
 > and every "tests pass" claim below was observed before the commit it describes.
 
 ---
@@ -83,8 +85,32 @@ Chronological record of ingests, queries, and lints. Newest at the bottom. See
 - Lesson recorded (and saved to memory): never put the `git commit` in the same
   step as the test run that gates it; verify, *then* commit.
 
+_(The TEST-bug fix + this log rewrite landed as commit `62fba9c`.)_
+
+### 2026-05-30 — Independent final verification (query) · commit `<this commit>`
+- Ran a final read-only verification workflow (8 agents): reviewed the
+  hand-written engine fixes, the UI↔engine wiring, and wiki accuracy against the
+  code, each finding adversarially verified (refute-by-default). Result: **0
+  correctness bugs**; 8 raw findings → 4 refuted, **4 confirmed (all nit/minor)**,
+  now all fixed:
+  - **minor (UI)** — a *human* in a forced-PASS state was soft-locked: the UI
+    never built a `PASS` action (AI players escaped via `chooseAction`). Fixed:
+    `src/ui/main.js` imports `pass`/`PASS` and renders a "Pass (no legal move)"
+    button when `legalMoves` is exactly `[PASS]`.
+  - **nit (engine)** — the frozen-table PASS end-path didn't advance
+    `state.current` like the normal end-path does (cosmetic; winner/scores never
+    read `current`). Fixed for shape-consistency in `game.js`.
+  - **nit (tests)** — dead `turnStartTickets` still set in two fixtures despite
+    the log saying it was "removed". Removed from `tests/game.test.js` and
+    `tests/rules.test.js`; it now appears nowhere in `src`/`tests`/`CONTRACT.md`.
+  - **nit (wiki)** — the prior entry lacked its commit hash and the header's
+    "all hashes verified" was too strong. Backfilled `62fba9c` and relaxed the
+    wording (above).
+- **`npm test` → 87/87** (observed green before this commit). Validator clean.
+
 ### 2026-05-30 — Wiki lint
 - Pages: 16. **No orphans** (all reachable from [[index]]). **No real dangling
   links** — the only unresolved `[[…]]` are the literal `[[links]]`/`[[page-name]]`
   *examples* inside [[CLAUDE]] (the schema doc), which are intentional.
 - Numbers reconciled with code: 76 routes, 37 tickets, 87 tests.
+- `turnStartTickets` fully eliminated (0 refs in `src`/`tests`/`CONTRACT.md`).

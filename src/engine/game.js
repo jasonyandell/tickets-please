@@ -312,6 +312,11 @@ export function applyAction(state, action, map) {
       if (!anyPlayerCanClaim(next, map)) {
         next.moveCount += 1;
         next.cardsDrawnThisTurn = 0;
+        // Advance current for shape-consistency with the normal end path
+        // (endTurn advances before finalizeGame). Winner/scores don't depend on
+        // it, but keeping the two 'ended' states uniform avoids surprising any
+        // snapshot/equality check.
+        next.current = (next.current + 1) % next.players.length;
         finalizeGame(next, map, 'no player can move');
         return next;
       }
