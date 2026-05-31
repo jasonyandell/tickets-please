@@ -69,8 +69,8 @@ Chronological record of ingests, queries, and lints. Newest at the bottom. See
 - This took the suite to **86/87** — better, but one property test still failed,
   and I again described it too optimistically before fully verifying. (Two follow
   -up wiki commits, `119d56c` and `fc7d112`, compounded this: they claimed green
-  and referenced a commit `4d9f0a2` that never existed — the mid-draw `Edit` had
-  failed. This log supersedes them.)
+  and referenced a commit hash (written as 4d9f0a2, not backticked here because
+  it never existed) — the mid-draw `Edit` had failed. This log supersedes them.)
 
 ### 2026-05-30 — Last failure was a TEST bug, not the engine (ingest + lint)
 - Root-caused the final red property test (`pc=5 seed=2 step=400`): the engine was
