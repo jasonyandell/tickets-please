@@ -165,7 +165,7 @@ _(The TEST-bug fix + this log rewrite landed as commit `62fba9c`.)_
   screenshot as "success." Corrected in `f9e6db6`: fixed the real bugs, then
   **observed** green (e2e pass; canvas probe 743 colors / 98% non-white / panel
   populated; viewed the 218 KB PNG; live prod re-verified in-browser, 0 app
-  errors) **before** committing. Hardened the rule in memory ([[verify-before-commit]])
+  errors) **before** committing. Hardened the rule in memory (the verify-before-commit memory)
   and added an integrity rule to the skill: *log/report only what you observed.*
 - **Commits `cc51a3a` (flawed), `f9e6db6` (real fix).** Live site confirmed
   rendering in a real browser at https://tickets-please.jasonyandell.workers.dev.

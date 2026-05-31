@@ -30,7 +30,7 @@ so assets 404'd; an over-strict favicon check) — see [[ui]] and `wiki/log.md`
 mode, every too-weak assertion (a green run with a bad screenshot), every
 environment gotcha gets written back into the skill + a dated `log.md` entry,
 *log failures loudest*. It also carries an **integrity rule** — record only what
-you observed, never a prediction — added the hard way (see [[verify-before-commit]]).
+you observed, never a prediction — added the hard way (see the verify-before-commit memory).
 
 This is the first instance of the broader goal: teach → extract a skill →
 validate → self-improve → measure. See [[testing]] and [[workflows]].
