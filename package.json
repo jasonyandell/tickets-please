@@ -7,7 +7,7 @@
   "scripts": {
     "test": "node --test tests/*.test.js",
     "test:watch": "node --test --watch tests/*.test.js",
-    "serve": "node tools/serve.js",
+    "serve": "node tools/build.js && node tools/serve.js",
     "validate": "node tools/validate-map.js",
     "build": "node tools/build.js",
     "deploy": "node tools/build.js && wrangler deploy",

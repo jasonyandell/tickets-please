@@ -1,17 +1,22 @@
-// Minimal zero-dependency static file server for local play.
-// Usage: node tools/serve.js [port]   then open http://localhost:8080/
+// Minimal zero-dependency static file server for local play and e2e tests.
+// Usage: node tools/serve.js [port] [dir]
+//   port: default 8080
+//   dir:  directory to serve, relative to repo root (default: the built "dist").
 //
-// Serves the repository root so the browser can load src/ui/index.html and the
-// ES modules under src/. No caching, correct MIME types for the few types used.
+// Serves <dir> and maps "/" to "<dir>/index.html". Defaulting to dist/ means
+// local dev, the Playwright e2e suite, and production (Cloudflare) all exercise
+// the EXACT same built artifact — no path-resolution divergence. Run
+// `npm run build` (or `npm run serve`, which builds first) to populate dist/.
+// No caching; correct MIME types for the few types used.
 
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
-import { extname, join, normalize } from 'node:path';
+import { extname, join, normalize, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { dirname } from 'node:path';
 
-const ROOT = normalize(join(dirname(fileURLToPath(import.meta.url)), '..'));
+const REPO_ROOT = normalize(join(dirname(fileURLToPath(import.meta.url)), '..'));
 const PORT = Number(process.argv[2]) || 8080;
+const ROOT = normalize(join(REPO_ROOT, process.argv[3] || 'dist'));
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -27,7 +32,7 @@ const MIME = {
 const server = createServer(async (req, res) => {
   try {
     let urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
-    if (urlPath === '/') urlPath = '/src/ui/index.html';
+    if (urlPath === '/' || urlPath === '') urlPath = '/index.html';
     const filePath = normalize(join(ROOT, urlPath));
     if (!filePath.startsWith(ROOT)) {
       res.writeHead(403);
@@ -53,5 +58,5 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`tickets-please dev server: http://localhost:${PORT}/`);
+  console.log(`tickets-please dev server: http://localhost:${PORT}/  (serving ${ROOT})`);
 });

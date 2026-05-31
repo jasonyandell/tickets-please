@@ -12,6 +12,17 @@ launch the real app in a real browser, **prove** the playable area rendered, and
 leave a screenshot as evidence. It is the forcing function that lets us stop
 eyeballing the page.
 
+> **Integrity rule (load-bearing — this skill was born from violating it):**
+> Record and report ONLY what you OBSERVED in this run. Never write the predicted
+> error, the predicted fix, or "it renders" before you've seen the green run AND
+> looked at the screenshot. A green assertion with an unseen screenshot is not a
+> pass. Verify, THEN commit (never batch the commit with the gating run).
+
+> **Serve the SHIPPED artifact, not source.** Point the e2e server at the built
+> output (here `dist/`, via `tools/serve.js <port> dist`), so the test exercises
+> the exact files prod serves. Serving raw `src/` hid a real 404 (relative asset
+> paths resolved differently at `/` than in prod) — see log.md 2026-05-30.
+
 ## When to use
 - The user reports the page is blank / not rendering / "should be a playable area".
 - After ANY change to `src/ui/` (`index.html`, `main.js`, `render.js`, `layout.js`).

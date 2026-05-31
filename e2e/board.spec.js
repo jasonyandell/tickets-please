@@ -10,12 +10,26 @@ import { mkdirSync } from 'node:fs';
 
 mkdirSync('artifacts', { recursive: true });
 
-// Collect console errors and uncaught page errors for the whole page lifetime.
+// Collect APP errors and uncaught page errors. We deliberately ignore browser
+// auto-requests that aren't app resources (e.g. /favicon.ico) — a 404 there is
+// browser noise, not an app failure. We track failed responses by URL so the
+// favicon can be filtered precisely, rather than dropping all 404 console lines.
 function attachErrorCollectors(page) {
   const errors = [];
+  const ignore = (url) => /\/favicon\.ico(\?|$)/.test(url || '');
   page.on('pageerror', (err) => errors.push(`pageerror: ${err.message}`));
+  page.on('response', (res) => {
+    if (res.status() >= 400 && !ignore(res.url())) {
+      errors.push(`http ${res.status()}: ${res.url()}`);
+    }
+  });
   page.on('console', (msg) => {
-    if (msg.type() === 'error') errors.push(`console.error: ${msg.text()}`);
+    if (msg.type() !== 'error') return;
+    // The generic "Failed to load resource" console line has no URL; if the only
+    // failing response was an ignored one (favicon), don't let this line fail us.
+    const text = msg.text();
+    if (/Failed to load resource/i.test(text)) return; // covered by the response handler above
+    errors.push(`console.error: ${text}`);
   });
   return errors;
 }

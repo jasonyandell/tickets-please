@@ -20,9 +20,11 @@ export default defineConfig({
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
-    command: `node tools/serve.js ${PORT}`,
+    // Build the shippable dist/ first, then serve THAT — so e2e exercises the
+    // exact artifact that goes to production (no path-resolution divergence).
+    command: `node tools/build.js && node tools/serve.js ${PORT} dist`,
     url: `http://localhost:${PORT}/`,
     reuseExistingServer: !process.env.CI,
-    timeout: 15_000,
+    timeout: 30_000,
   },
 });
