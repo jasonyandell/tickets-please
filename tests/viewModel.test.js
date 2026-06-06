@@ -99,6 +99,33 @@ test('forced pass: only PASS is legal, prompt says pass', () => {
   assert.match(vm.prompt, /pass/i);
 });
 
+// --- final round ------------------------------------------------------------
+
+test('play phase: finalRound false, finalTurnsLeft null, no FINAL ROUND in prompt', () => {
+  const vm = buildViewModel(makeState(), MAP, CONFIGS, {});
+  assert.equal(vm.finalRound, false);
+  assert.equal(vm.finalTurnsLeft, null);
+  assert.doesNotMatch(vm.prompt, /FINAL ROUND/);
+});
+
+test('finalRound phase: finalRound true, turns-left surfaced in vm + prompt', () => {
+  const vm = buildViewModel(makeState({ phase: 'finalRound', finalTurnsLeft: 2 }), MAP, CONFIGS, {});
+  assert.equal(vm.finalRound, true);
+  assert.equal(vm.finalTurnsLeft, 2);
+  assert.match(vm.prompt, /FINAL ROUND \(2 turns left\)/);
+});
+
+test('finalRound singular: "1 turn left" (no plural)', () => {
+  const vm = buildViewModel(makeState({ phase: 'finalRound', finalTurnsLeft: 1 }), MAP, CONFIGS, {});
+  assert.match(vm.prompt, /FINAL ROUND \(1 turn left\)/);
+});
+
+test('game over: finalRound false even if phase data lingers', () => {
+  const vm = buildViewModel(makeState({ phase: 'finalRound', finalTurnsLeft: 0 }), MAP, CONFIGS, { gameOver: true });
+  assert.equal(vm.finalRound, false);
+  assert.equal(vm.finalTurnsLeft, null);
+});
+
 // --- routes: cost / affordable / reason -------------------------------------
 
 test('route cost + affordable + reason: affordable vs unaffordable', () => {

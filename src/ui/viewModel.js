@@ -128,6 +128,15 @@ export function buildViewModel(state, map, configs = [], opts = {}) {
   const gameOver = !!opts.gameOver || phase === 'ended';
   const curIdx = currentPlayerIndex(state, players);
 
+  // Final round: the endgame trigger has fired (a player dropped to the train
+  // threshold) and every player is taking their last turn. The engine marks this
+  // with phase === 'finalRound' and tracks finalTurnsLeft (turns remaining incl.
+  // the current one). Surface it so the UI can warn "last lap".
+  const finalRound = !gameOver && phase === 'finalRound';
+  const finalTurnsLeft = finalRound && typeof (state && state.finalTurnsLeft) === 'number'
+    ? state.finalTurnsLeft
+    : null;
+
   const playerName = (i) => {
     const c = cfgs[i];
     if (c && c.name) return c.name;
@@ -314,6 +323,7 @@ export function buildViewModel(state, map, configs = [], opts = {}) {
     gameOver, pending, mustDrawSecond, forcedPass,
     curIdx, playerName, isAI: playerIsAI(curIdx),
     winnerIndex, scoreboard,
+    finalRound, finalTurnsLeft,
   });
 
   return {
@@ -327,6 +337,8 @@ export function buildViewModel(state, map, configs = [], opts = {}) {
     secretForIndex,
     standings,
     leaderIndex,
+    finalRound,
+    finalTurnsLeft,
     scoreboard,
     winnerIndex,
   };
@@ -353,7 +365,7 @@ function computeWinnerIndex(state, players, scores, gameOver) {
   return null;
 }
 
-function buildPrompt({ gameOver, pending, mustDrawSecond, forcedPass, curIdx, playerName, isAI, winnerIndex, scoreboard }) {
+function buildPrompt({ gameOver, pending, mustDrawSecond, forcedPass, curIdx, playerName, isAI, winnerIndex, scoreboard, finalRound, finalTurnsLeft }) {
   if (gameOver) {
     if (winnerIndex == null) return 'Game over';
     const total = scoreboard ? (scoreboard.find((s) => s.index === winnerIndex) || {}).total : undefined;
@@ -365,19 +377,23 @@ function buildPrompt({ gameOver, pending, mustDrawSecond, forcedPass, curIdx, pl
       : `Game over — ${who} wins`;
   }
   const name = playerName(curIdx);
+  // A short "last lap" tag appended to the in-play prompt during the final round.
+  const lap = finalRound
+    ? ` — FINAL ROUND${typeof finalTurnsLeft === 'number' ? ` (${finalTurnsLeft} turn${finalTurnsLeft === 1 ? '' : 's'} left)` : ''}`
+    : '';
   if (pending) {
     const offered = Array.isArray(pending.offered) ? pending.offered.length : 0;
     const minKeep = pending.minKeep ?? 1;
-    return `${name}: keep at least ${minKeep} of ${offered} drawn tickets`;
+    return `${name}: keep at least ${minKeep} of ${offered} drawn tickets${lap}`;
   }
   if (mustDrawSecond) {
-    return `${name}: draw your 2nd card (deck or a non-wild face-up card)`;
+    return `${name}: draw your 2nd card (deck or a non-wild face-up card)${lap}`;
   }
   if (forcedPass) {
-    return `${name}: no legal move — pass`;
+    return `${name}: no legal move — pass${lap}`;
   }
   if (isAI) {
-    return `${name} (AI) is taking their turn…`;
+    return `${name} (AI) is taking their turn…${lap}`;
   }
-  return `${name}: draw cards, claim a route, or draw tickets`;
+  return `${name}: draw cards, claim a route, or draw tickets${lap}`;
 }

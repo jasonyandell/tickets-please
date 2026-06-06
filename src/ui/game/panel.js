@@ -74,6 +74,19 @@ export function renderPanel(panel, ctx) {
     turnLine.appendChild(who);
     banner.appendChild(turnLine);
   }
+
+  // Final-round ("last lap") badge: prominent, visible to everyone, so no player
+  // is surprised by the game ending. Driven purely by the view-model.
+  if (!gameOver && vm.finalRound) {
+    const fr = el('div', 'final-round');
+    fr.dataset.testid = 'final-round';
+    if (typeof vm.finalTurnsLeft === 'number') fr.dataset.turnsLeft = String(vm.finalTurnsLeft);
+    const turns = typeof vm.finalTurnsLeft === 'number'
+      ? ` — ${vm.finalTurnsLeft} turn${vm.finalTurnsLeft === 1 ? '' : 's'} left`
+      : '';
+    fr.textContent = `🏁 FINAL ROUND${turns}`;
+    banner.appendChild(fr);
+  }
   const promptLine = el('div', 'promptline');
   promptLine.textContent = vm.prompt || (gameOver ? 'Game over' : `Turn: ${curName}`);
   banner.appendChild(promptLine);
