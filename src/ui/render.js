@@ -18,6 +18,7 @@ import {
   cityId,
   cityName,
 } from './layout.js';
+import { setBoardRenderContext } from './game/board.js';
 
 // Player colors used both on the map (claimed routes) and the side panel.
 export const PLAYER_COLORS = ['#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4'];
@@ -103,6 +104,38 @@ export function playerIndexOf(state, playerId) {
   return 0;
 }
 
+// Build the per-route highlight LEVEL map keyed by routeId:
+//   'claimable'  — legal to claim right now (strong, solid highlight)
+//   'affordable' — the active human could cover the cost, but it is not legal
+//                  to claim this instant (subtle dashed highlight)
+// Claimable comes from the `highlight` set main.js passes (legal moves); the
+// affordable-but-not-now tier is read from the published view-model so the board
+// distinguishes "go" from "you can pay for it, just not yet". Affordable styling
+// is shown ONLY on the active human's turn (never leaks an AI/opponent hand).
+function routeLevels(highlight, claimedRids) {
+  const levels = new Map();
+  const hi = highlight || new Set();
+  for (const rid of hi) levels.set(String(rid), 'claimable');
+
+  let vm = null;
+  try {
+    vm = (typeof window !== 'undefined' && window.__APP__) ? window.__APP__.viewModel : null;
+  } catch (_) { vm = null; }
+
+  if (vm && Array.isArray(vm.routes)) {
+    const showAfford = vm.secretForIndex != null && vm.secretForIndex === vm.currentPlayerIndex;
+    for (const r of vm.routes) {
+      if (!r || r.claimed) continue;
+      const rid = String(r.id);
+      if (r.claimable) levels.set(rid, 'claimable');
+      else if (showAfford && r.affordable && !levels.has(rid) && !claimedRids.has(rid)) {
+        levels.set(rid, 'affordable');
+      }
+    }
+  }
+  return levels;
+}
+
 // Main entry: draw the whole map.
 // ctx: 2d context; map: engine map; state: engine state;
 // view: { width, height, transform }; highlight: Set<routeId> claimable now.
@@ -117,7 +150,12 @@ export function drawMap(ctx, map, state, view, highlight) {
   const t = view.transform || fitTransform(map, width, height);
   const layout = view.layout || computeLayout(map);
   const owners = claimedOwners(state);
-  const hi = highlight || new Set();
+
+  const claimedRids = new Set();
+  for (const rl of layout.routes) {
+    if (owners.get(rl.id) !== undefined) claimedRids.add(String(rl.id));
+  }
+  const levels = routeLevels(highlight, claimedRids);
 
   // Draw routes.
   for (const rl of layout.routes) {
@@ -125,7 +163,7 @@ export function drawMap(ctx, map, state, view, highlight) {
     const rid = rl.id;
     const ownerId = owners.get(rid);
     const claimed = ownerId !== undefined;
-    const isHighlight = hi.has(rid);
+    const level = claimed ? 'none' : (levels.get(String(rid)) || 'none');
 
     let fill;
     let stroke = 'rgba(0,0,0,0.35)';
@@ -139,7 +177,7 @@ export function drawMap(ctx, map, state, view, highlight) {
     }
 
     for (const box of rl.boxes) {
-      drawBox(ctx, box, t, fill, stroke, isHighlight);
+      drawBox(ctx, box, t, fill, stroke, level);
     }
   }
 
@@ -148,9 +186,24 @@ export function drawMap(ctx, map, state, view, highlight) {
     const p = applyTransform({ x: c.x, y: c.y }, t);
     drawCity(ctx, p.x, p.y, c.name);
   }
+
+  // Hand the board interaction layer the live geometry it needs to hit-test the
+  // cursor and locate routes (it imports only pure helpers; we push, never pull).
+  try {
+    setBoardRenderContext({ canvas: ctx.canvas, map, transform: t, layout, width, height });
+  } catch (_) { /* board layer optional */ }
+
+  // Observable State Contract — single canvas smoke signal. Once the board has
+  // actually been drawn (non-zero size), flag it so e2e can assert paint without
+  // sampling pixels. This is the ONLY canvas check anywhere.
+  if (ctx.canvas && width > 0 && height > 0) {
+    ctx.canvas.dataset.painted = 'true';
+  }
 }
 
-function drawBox(ctx, box, t, fill, stroke, highlight) {
+// level: 'claimable' (solid, bold — a clear "go"), 'affordable' (dashed amber —
+// "you can pay, just not this instant"), or 'none' (normal).
+function drawBox(ctx, box, t, fill, stroke, level) {
   const c = box.corners.map((pt) => applyTransform(pt, t));
   ctx.beginPath();
   ctx.moveTo(c[0].x, c[0].y);
@@ -158,15 +211,27 @@ function drawBox(ctx, box, t, fill, stroke, highlight) {
   ctx.closePath();
   ctx.fillStyle = fill;
   ctx.fill();
-  ctx.lineWidth = highlight ? 3 : 1;
-  ctx.strokeStyle = highlight ? '#111' : stroke;
-  ctx.stroke();
-  if (highlight) {
+
+  if (level === 'claimable') {
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#111';
+    ctx.stroke();
     ctx.save();
     ctx.lineWidth = 1.5;
-    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+    ctx.strokeStyle = 'rgba(255,255,255,0.95)';
     ctx.stroke();
     ctx.restore();
+  } else if (level === 'affordable') {
+    ctx.save();
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([5, 4]);
+    ctx.strokeStyle = '#c9851a';
+    ctx.stroke();
+    ctx.restore();
+  } else {
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = stroke;
+    ctx.stroke();
   }
 }
 

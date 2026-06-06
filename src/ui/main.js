@@ -41,13 +41,17 @@ import {
 } from './layout.js';
 import {
   drawMap,
-  PLAYER_COLORS,
-  playerColor,
-  cardColorCss,
   getPlayers,
   playerIndexOf,
-  claimedOwners,
 } from './render.js';
+
+import { buildViewModel } from './viewModel.js';
+import { createRouter, setViewModel, setLastAction } from './app.js';
+import { renderMenu } from './screens/menu.js';
+import { renderSetup } from './screens/setup.js';
+import { renderGameOver } from './screens/gameover.js';
+import { showPassDevice, hidePassDevice } from './screens/passdevice.js';
+import { renderPanel } from './game/panel.js';
 
 // Try to import a default map; the engine map module may export it under a few
 // names. We resolve lazily so a missing export does not break module loading.
@@ -65,6 +69,9 @@ const ui = {
   panel: null,
   log: null,
 };
+
+// The screen router (menu | setup | game | gameover). Set up in boot().
+let router = null;
 
 let G = {
   map: null,
@@ -250,10 +257,13 @@ function ticketById(id) {
 // ---------------------------------------------------------------------------
 
 function safeApply(action, describe) {
+  const by = currentPlayerIndex(G.state);
   try {
     const next = applyAction(G.state, action, G.map);
     G.state = next;
     if (describe) log(describe);
+    // Observable State Contract: expose the action that was just applied.
+    if (action && action.type) setLastAction({ ...action, by });
     return true;
   } catch (err) {
     log(`Illegal: ${describe || (action && action.type) || 'action'} — ${err && err.message ? err.message : err}`);
@@ -313,11 +323,23 @@ function claimActionFor(routeId) {
 // Turn flow / AI driver
 // ---------------------------------------------------------------------------
 
-function afterAction() {
+// Called after a HUMAN action (the AI driver has its own loop and never reaches
+// here). `actingIdx` is the player who just acted. If their turn handed off to a
+// DIFFERENT human, gate the next player behind a pass-the-device interstitial so
+// the previous player can't see the incoming hand. AI↔human handoffs get none.
+function afterAction(actingIdx) {
   refresh();
   if (isGameOver(G.state)) {
     endGame();
     return;
+  }
+  const nextIdx = currentPlayerIndex(G.state);
+  if (actingIdx != null && nextIdx !== actingIdx && !playerIsAI(nextIdx)) {
+    // Consecutive human turns: hide everything until the new player is ready.
+    const name = (G.viewModel && G.viewModel.players[nextIdx] && G.viewModel.players[nextIdx].name)
+      || `P${nextIdx + 1}`;
+    showPassDevice({ playerNumber: nextIdx + 1, name, onReady: refresh });
+    return; // next player is human — nothing to schedule
   }
   scheduleAIIfNeeded();
 }
@@ -431,7 +453,7 @@ function onCanvasClick(ev) {
       return;
     }
     safeApply(action, describeAction(action, idx));
-    afterAction();
+    afterAction(idx);
   }
 }
 
@@ -439,40 +461,50 @@ function doDrawDeck() {
   if (G.gameOver) return;
   const idx = currentPlayerIndex(G.state);
   if (playerIsAI(idx)) return;
-  if (safeApply(drawDeck(), describeAction(drawDeck(), idx))) afterAction();
+  if (safeApply(drawDeck(), describeAction(drawDeck(), idx))) afterAction(idx);
 }
 
 function doDrawFaceUp(slot) {
   if (G.gameOver) return;
   const idx = currentPlayerIndex(G.state);
   if (playerIsAI(idx)) return;
-  if (safeApply(drawFaceUp(slot), describeAction(drawFaceUp(slot), idx))) afterAction();
+  if (safeApply(drawFaceUp(slot), describeAction(drawFaceUp(slot), idx))) afterAction(idx);
 }
 
 function doDrawTickets() {
   if (G.gameOver) return;
   const idx = currentPlayerIndex(G.state);
   if (playerIsAI(idx)) return;
-  if (safeApply(drawTickets(), describeAction(drawTickets(), idx))) afterAction();
+  if (safeApply(drawTickets(), describeAction(drawTickets(), idx))) afterAction(idx);
 }
 
 function doKeepTickets(keep) {
   if (G.gameOver) return;
   const idx = currentPlayerIndex(G.state);
   if (playerIsAI(idx)) return;
-  if (safeApply(keepTickets(keep), describeAction(keepTickets(keep), idx))) afterAction();
+  if (safeApply(keepTickets(keep), describeAction(keepTickets(keep), idx))) afterAction(idx);
+}
+
+// Human pass (e.g. a forced pass when no other move is legal). Routes through
+// afterAction(idx) so a pass that hands off to another human still triggers the
+// pass-the-device interstitial.
+function doPass() {
+  if (G.gameOver) return;
+  const idx = currentPlayerIndex(G.state);
+  if (playerIsAI(idx)) return;
+  if (safeApply(pass(), describeAction(pass(), idx))) afterAction(idx);
 }
 
 // ---------------------------------------------------------------------------
 // Game lifecycle
 // ---------------------------------------------------------------------------
 
-function newGame(numPlayers, configs) {
+function newGame(numPlayers, configs, seed) {
   clearTimeout(G.aiTimer);
   const map = resolveMap();
   if (!map) {
     log('ERROR: could not resolve a map from src/engine/map.js');
-    renderPanel();
+    refresh();
     return;
   }
   const tickets = resolveTickets(map);
@@ -480,8 +512,12 @@ function newGame(numPlayers, configs) {
   for (let i = 0; i < numPlayers; i++) {
     const c = configs[i] || {};
     const isAI = (c.isAI ?? c.ai ?? (i !== 0));
-    playerConfigs.push({ name: `P${i + 1}`, isAI: !!isAI });
+    playerConfigs.push({ name: c.name || `P${i + 1}`, isAI: !!isAI });
   }
+
+  // A fixed seed (from the setup screen / e2e) yields a deterministic game;
+  // otherwise pick a fresh one each game.
+  const gameSeed = (seed != null) ? (seed >>> 0) : (Date.now() >>> 0);
 
   let state;
   try {
@@ -489,11 +525,11 @@ function newGame(numPlayers, configs) {
       map,
       tickets,
       playerConfigs,
-      seed: (Date.now() >>> 0),
+      seed: gameSeed,
     });
   } catch (err) {
     log(`initGame failed: ${err && err.message ? err.message : err}`);
-    renderPanel();
+    refresh();
     return;
   }
 
@@ -503,7 +539,7 @@ function newGame(numPlayers, configs) {
     state,
     playerConfigs,
     layout: computeLayout(map),
-    logLines: [`New game: ${numPlayers} players.`],
+    logLines: [`New game: ${numPlayers} players (seed ${gameSeed}).`],
     gameOver: false,
     winner: null,
     scores: null,
@@ -517,6 +553,7 @@ function endGame() {
   if (G.gameOver) return;
   G.gameOver = true;
   clearTimeout(G.aiTimer);
+  hidePassDevice();
   let scores = [];
   try {
     scores = finalScores(G.state, G.map);
@@ -530,7 +567,14 @@ function endGame() {
   } else {
     log('GAME OVER.');
   }
-  refresh();
+  refresh();          // recompute the view-model (now in game-over shape)
+  // Fill the game-over screen from the (now revealed) view-model. New Game goes
+  // to setup so the next match can be reconfigured; Menu returns to the landing.
+  renderGameOver(router && router.sections.gameover, G.viewModel, {
+    onNewGame: goToSetup,
+    onMenu: goToMenu,
+  });
+  if (router) router.show('gameover');
 }
 
 // finalScores returns rows: { playerId, routePoints, ticketPoints, longestBonus,
@@ -570,12 +614,62 @@ function computeWinner(scores) {
 // ---------------------------------------------------------------------------
 
 function refresh() {
+  // Derive the pure view-model and publish it on the Observable State Contract
+  // (window.__APP__.viewModel) so e2e reads facts, not pixels.
+  let vm = null;
+  if (G.state && G.map) {
+    try {
+      vm = buildViewModel(G.state, G.map, G.playerConfigs, {
+        gameOver: G.gameOver,
+        scores: G.scores,
+      });
+    } catch (err) {
+      log(`viewModel failed: ${err && err.message ? err.message : err}`);
+    }
+  }
+  G.viewModel = vm;
+  setViewModel(vm);
+
   renderCanvas();
-  renderPanel();
+  renderPanel(ui.panel, buildPanelCtx(vm));
+}
+
+// Bundle the live state snapshot, defensive accessors, and action callbacks the
+// extracted side panel needs. The accessors stay defined here (they read G) so
+// the panel remains a pure view over whatever the controller hands it.
+function buildPanelCtx(viewModel) {
+  return {
+    state: G.state,
+    map: G.map,
+    gameOver: G.gameOver,
+    winner: G.winner,
+    logLines: G.logLines,
+    viewModel,
+    currentPlayerIndex,
+    playerIsAI,
+    pendingTickets,
+    ticketById,
+    ticketLabel,
+    faceUpCards,
+    playerHand,
+    playerTickets,
+    playerScore,
+    handEntries,
+    onDrawDeck: doDrawDeck,
+    onDrawFaceUp: doDrawFaceUp,
+    onDrawTickets: doDrawTickets,
+    onKeepTickets: doKeepTickets,
+    onPass: doPass,
+    onMenu: goToMenu,
+  };
 }
 
 function renderCanvas() {
   if (!ui.ctx || !G.map) return;
+  // Only paint when the game screen is actually visible; a hidden canvas has no
+  // layout box, so sizing/painting it would be a no-op (and the source of the
+  // old "blank board" race). When hidden we skip and repaint on screen entry.
+  if (ui.canvas.offsetParent === null) return;
   const highlight = (!G.gameOver && !playerIsAI(currentPlayerIndex(G.state)))
     ? claimableRouteIds(G.state)
     : new Set();
@@ -587,282 +681,8 @@ function renderCanvas() {
   }, highlight);
 }
 
-function pip(color) {
-  const span = document.createElement('span');
-  span.className = 'pip';
-  span.style.background = cardColorCss(color);
-  span.title = String(color);
-  return span;
-}
-
-function renderPanel() {
-  const panel = ui.panel;
-  if (!panel) return;
-  panel.innerHTML = '';
-
-  // --- Controls (New Game) ---
-  const controls = el('div', 'controls');
-  const sel = document.createElement('select');
-  sel.id = 'playerCount';
-  for (let n = 2; n <= 5; n++) {
-    const o = document.createElement('option');
-    o.value = String(n);
-    o.textContent = `${n} players`;
-    if (n === (G.playerConfigs.length || 2)) o.selected = true;
-    sel.appendChild(o);
-  }
-  controls.appendChild(sel);
-
-  // human/AI toggles per slot
-  const toggles = el('div', 'toggles');
-  const renderToggles = () => {
-    toggles.innerHTML = '';
-    const n = Number(sel.value);
-    for (let i = 0; i < n; i++) {
-      const wrap = el('label', 'toggle');
-      const sw = document.createElement('span');
-      sw.className = 'swatch';
-      sw.style.background = playerColor(i);
-      const cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.dataset.idx = String(i);
-      const cfg = G.playerConfigs[i];
-      cb.checked = cfg ? !!(cfg.isAI ?? cfg.ai) : (i !== 0);
-      const txt = document.createElement('span');
-      const setTxt = () => { txt.textContent = `P${i + 1}: ${cb.checked ? 'AI' : 'Human'}`; };
-      setTxt();
-      cb.addEventListener('change', setTxt);
-      wrap.appendChild(sw);
-      wrap.appendChild(cb);
-      wrap.appendChild(txt);
-      toggles.appendChild(wrap);
-    }
-  };
-  sel.addEventListener('change', renderToggles);
-  renderToggles();
-  controls.appendChild(toggles);
-
-  const newBtn = button('New Game', () => {
-    const n = Number(sel.value);
-    const configs = [];
-    toggles.querySelectorAll('input[type=checkbox]').forEach((cb) => {
-      configs[Number(cb.dataset.idx)] = { isAI: cb.checked };
-    });
-    newGame(n, configs);
-  });
-  newBtn.classList.add('primary');
-  controls.appendChild(newBtn);
-  panel.appendChild(controls);
-
-  if (!G.state) {
-    panel.appendChild(noteEl('Press "New Game" to start.'));
-    renderLog(panel);
-    return;
-  }
-
-  // --- Current player / turn banner ---
-  const curIdx = currentPlayerIndex(G.state);
-  const banner = el('div', 'banner');
-  banner.style.borderColor = playerColor(curIdx);
-  if (G.gameOver) {
-    banner.textContent = G.winner
-      ? `Game over — Winner: P${G.winner.index + 1} (${G.winner.score} pts)`
-      : 'Game over';
-    banner.classList.add('over');
-  } else {
-    banner.textContent = `Turn: P${curIdx + 1} ${playerIsAI(curIdx) ? '(AI thinking…)' : '(your move)'}`;
-  }
-  panel.appendChild(banner);
-
-  // --- Action buttons (human only) ---
-  const acts = el('div', 'actions');
-  const human = !G.gameOver && !playerIsAI(curIdx);
-  const pend = pendingTickets(G.state);
-
-  if (pend) {
-    const tdiv = el('div', 'ticketChoice');
-    tdiv.appendChild(noteEl(`Choose tickets to keep (at least ${pend.minKeep}):`));
-    pend.ids.forEach((id) => {
-      const lbl = el('label', 'tkrow');
-      const cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.checked = true;
-      cb.dataset.tkid = String(id);
-      lbl.appendChild(cb);
-      lbl.appendChild(document.createTextNode(' ' + ticketLabel(ticketById(id))));
-      tdiv.appendChild(lbl);
-    });
-    const keepBtn = button('Keep selected', () => {
-      const keep = [];
-      tdiv.querySelectorAll('input[type=checkbox]').forEach((cb) => {
-        if (cb.checked) keep.push(cb.dataset.tkid);
-      });
-      if (keep.length < pend.minKeep) {
-        log(`Keep at least ${pend.minKeep} tickets.`);
-        refresh();
-        return;
-      }
-      doKeepTickets(keep);
-    });
-    keepBtn.disabled = !human;
-    tdiv.appendChild(keepBtn);
-    acts.appendChild(tdiv);
-  } else {
-    const dDeck = button('Draw Deck', doDrawDeck);
-    const dTickets = button('Draw Tickets', doDrawTickets);
-    dDeck.disabled = !human;
-    dTickets.disabled = !human;
-    acts.appendChild(dDeck);
-    acts.appendChild(dTickets);
-  }
-  panel.appendChild(acts);
-
-  // --- Face-up row ---
-  const fu = faceUpCards(G.state);
-  const fuWrap = el('div', 'faceup');
-  fuWrap.appendChild(labelEl('Face-up cards'));
-  const fuRow = el('div', 'cardrow');
-  fu.forEach((card, slot) => {
-    const color = typeof card === 'string' ? card : (card && (card.color ?? card.kind)) || 'gray';
-    const c = el('div', 'card');
-    c.style.background = cardColorCss(color);
-    c.title = String(color);
-    c.textContent = abbr(color);
-    if (human) {
-      c.classList.add('clickable');
-      c.addEventListener('click', () => doDrawFaceUp(slot));
-    }
-    fuRow.appendChild(c);
-  });
-  if (fu.length === 0) fuRow.appendChild(noteEl('(none)'));
-  fuWrap.appendChild(fuRow);
-  panel.appendChild(fuWrap);
-
-  // --- Per-player blocks ---
-  const players = getPlayers(G.state);
-  players.forEach((p, i) => {
-    const block = el('div', 'player');
-    block.style.borderLeftColor = playerColor(i);
-    const head = el('div', 'phead');
-    const dot = document.createElement('span');
-    dot.className = 'swatch';
-    dot.style.background = playerColor(i);
-    head.appendChild(dot);
-    const title = document.createElement('strong');
-    title.textContent = `P${i + 1}${playerIsAI(i) ? ' (AI)' : ''}`;
-    head.appendChild(title);
-    const sc = document.createElement('span');
-    sc.className = 'score';
-    sc.textContent = `${playerScore(G.state, i)} pts`;
-    head.appendChild(sc);
-    if (i === curIdx && !G.gameOver) head.classList.add('active');
-    block.appendChild(head);
-
-    // hand pips
-    const hand = handEntries(playerHand(p));
-    const handRow = el('div', 'hand');
-    if (hand.length === 0) {
-      handRow.appendChild(noteEl('(no cards)'));
-    } else {
-      hand.forEach(({ color, count }) => {
-        const grp = el('span', 'pipgrp');
-        for (let k = 0; k < Math.min(count, 12); k++) grp.appendChild(pip(color));
-        if (count > 12) {
-          const more = document.createElement('span');
-          more.className = 'pipmore';
-          more.textContent = `+${count - 12}`;
-          grp.appendChild(more);
-        }
-        const cnt = document.createElement('span');
-        cnt.className = 'pipcount';
-        cnt.textContent = String(count);
-        grp.appendChild(cnt);
-        handRow.appendChild(grp);
-      });
-    }
-    block.appendChild(handRow);
-
-    // trains remaining (if available)
-    const trains = p.trains ?? p.cars ?? p.pieces;
-    if (typeof trains === 'number') {
-      block.appendChild(noteEl(`Trains: ${trains}`));
-    }
-
-    // tickets with done / !done
-    const tickets = playerTickets(p);
-    if (tickets.length > 0) {
-      const tWrap = el('div', 'tickets');
-      tWrap.appendChild(labelEl('Tickets'));
-      tickets.forEach((tk) => {
-        const row = el('div', 'tkrow');
-        let done = false;
-        try {
-          const pid = p.id != null ? p.id : i;
-          done = !!ticketComplete(G.state, pid, tk, G.map);
-        } catch (_) { done = false; }
-        const mark = document.createElement('span');
-        mark.className = done ? 'done' : 'notdone';
-        mark.textContent = done ? '✓' : '✗';
-        row.appendChild(mark);
-        row.appendChild(document.createTextNode(' ' + ticketLabel(tk)));
-        tWrap.appendChild(row);
-      });
-      block.appendChild(tWrap);
-    }
-
-    panel.appendChild(block);
-  });
-
-  renderLog(panel);
-}
-
-function renderLog(panel) {
-  const logWrap = el('div', 'logwrap');
-  logWrap.appendChild(labelEl('Log'));
-  const logBox = el('div', 'log');
-  ui.log = logBox;
-  const last = G.logLines.slice(-40);
-  for (const line of last) {
-    const ln = document.createElement('div');
-    ln.className = 'logline';
-    ln.textContent = line;
-    logBox.appendChild(ln);
-  }
-  logWrap.appendChild(logBox);
-  panel.appendChild(logWrap);
-  // scroll to bottom
-  logBox.scrollTop = logBox.scrollHeight;
-}
-
-// ---------------------------------------------------------------------------
-// Small DOM helpers
-// ---------------------------------------------------------------------------
-
-function el(tag, cls) {
-  const e = document.createElement(tag);
-  if (cls) e.className = cls;
-  return e;
-}
-function button(text, onClick) {
-  const b = document.createElement('button');
-  b.textContent = text;
-  b.addEventListener('click', onClick);
-  return b;
-}
-function labelEl(text) {
-  const e = el('div', 'label');
-  e.textContent = text;
-  return e;
-}
-function noteEl(text) {
-  const e = el('div', 'note');
-  e.textContent = text;
-  return e;
-}
-function abbr(color) {
-  const c = String(color);
-  return c.length <= 3 ? c.toUpperCase() : c.slice(0, 1).toUpperCase();
-}
+// (The endgame scoreboard now lives in screens/gameover.js; main.js just calls
+// renderGameOver() from endGame() with the view-model + screen-transition hooks.)
 
 // ---------------------------------------------------------------------------
 // Sizing
@@ -870,6 +690,10 @@ function abbr(color) {
 
 function resize() {
   if (!ui.canvas) return;
+  // A hidden canvas (any non-game screen) has a zero-size layout box; sizing it
+  // then would collapse the board. Skip until the game screen is visible — the
+  // game screen's onShow re-runs resize() so the first paint happens on entry.
+  if (ui.canvas.offsetParent === null) return;
   const parent = ui.canvas.parentElement;
   const w = Math.max(parent ? parent.clientWidth : 800, 320);
   const h = Math.max(parent ? parent.clientHeight : 600, 320);
@@ -888,17 +712,49 @@ function resize() {
 // Boot
 // ---------------------------------------------------------------------------
 
+// Screen transitions used as callbacks by the screens / panel. Each drops any
+// open pass-the-device overlay so it can't linger across a navigation.
+function goToMenu() {
+  clearTimeout(G.aiTimer);
+  hidePassDevice();
+  if (router) router.show('menu');
+}
+
+function goToSetup() {
+  clearTimeout(G.aiTimer);
+  hidePassDevice();
+  if (router) router.show('setup');
+}
+
+function startGame({ numPlayers, configs, seed }) {
+  // Show the game screen FIRST so the canvas has a real layout box, then deal —
+  // newGame()'s resize()/refresh() paint into a now-visible canvas.
+  hidePassDevice();
+  if (router) router.show('game');
+  newGame(numPlayers, configs, seed);
+}
+
 function boot() {
+  const appRoot = document.getElementById('app');
   ui.canvas = document.getElementById('map');
   ui.ctx = ui.canvas ? ui.canvas.getContext('2d') : null;
   ui.panel = document.getElementById('panel');
 
+  // Router over the [data-screen] sections. Repaint the board whenever the game
+  // screen becomes visible (so the canvas sizes against a real box).
+  router = createRouter(appRoot, (name) => {
+    if (name === 'game') resize();
+  });
+
+  // Build the static screens once.
+  renderMenu(router.sections.menu, { onPlay: () => router.show('setup') });
+  renderSetup(router.sections.setup, { onStart: startGame, onBack: goToMenu });
+
   if (ui.canvas) ui.canvas.addEventListener('click', onCanvasClick);
   window.addEventListener('resize', resize);
 
-  resize();
-  // Default: 2 players, P1 human vs P2 AI.
-  newGame(2, [{ isAI: false }, { isAI: true }]);
+  // Boot to the landing menu.
+  router.show('menu');
 }
 
 if (typeof document !== 'undefined') {

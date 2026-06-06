@@ -2,7 +2,9 @@
 <!--
   tickets-please — browser entry point. Zero dependency: loads the ES-module UI
   controller (main.js), which imports the engine and AI directly. No bundler.
-  The UI controller binds to #board (canvas) and #panel (side panel).
+  The app is a small screen router (app.js): one <section data-screen> per screen
+  (menu | setup | game | gameover); main.js shows exactly one at a time. The game
+  screen hosts the canvas (#map) and the side panel (#panel).
 -->
 <html lang="en">
   <head>
@@ -21,10 +23,16 @@
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
-    <main id="app">
-      <canvas id="map" width="1200" height="760"></canvas>
-      <aside id="panel"></aside>
-    </main>
+    <div id="app">
+      <!-- menu / setup / gameover are populated by their JS modules at boot. -->
+      <section data-screen="menu" class="screen"></section>
+      <section data-screen="setup" class="screen"></section>
+      <section data-screen="game" class="screen">
+        <div id="board"><canvas id="map" width="1200" height="760"></canvas></div>
+        <aside id="panel"></aside>
+      </section>
+      <section data-screen="gameover" class="screen"></section>
+    </div>
     <noscript>tickets-please needs JavaScript enabled to play.</noscript>
     <script type="module" src="./main.js"></script>
   </body>
