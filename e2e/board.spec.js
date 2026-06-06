@@ -58,6 +58,15 @@ test('menu → setup → start → play a turn (contract, no pixels)', async ({ 
   await expect(page.locator('[data-screen="menu"]')).toBeVisible();
   await expect.poll(async () => (await appState(page)).screen).toBe('menu');
 
+  // 1b. How-to-play toggles open and teaches the rules (starting tickets, etc.).
+  const how = page.locator('.menu-how');
+  await expect(how).toBeHidden();
+  await page.locator('button[data-action="how-to-play"]').click();
+  await expect(how).toBeVisible();
+  await expect(how).toContainText('keep at least 2');
+  await page.locator('button[data-action="how-to-play"]').click();
+  await expect(how).toBeHidden();
+
   // 2. Play → setup.
   await page.locator('button[data-action="play"]').click();
   await expect(page.locator('[data-screen="setup"]')).toBeVisible();

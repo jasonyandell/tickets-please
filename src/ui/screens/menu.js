@@ -44,17 +44,21 @@ export function renderMenu(container, { onPlay }) {
   how.hidden = true;
   how.innerHTML = `
     <h2>How to play</h2>
+    <p>To start, each player is dealt <strong>3 destination tickets</strong> and
+      must <strong>keep at least 2</strong> — secret city-to-city goals worth
+      points if completed (and a penalty if not).</p>
     <p>On your turn, do <strong>one</strong> of:</p>
     <ul>
       <li><strong>Draw 2 train cards</strong> — from the deck or the face-up row
-        (a face-up wild costs your whole turn).</li>
+        (a face-up wild costs your whole turn, and can't be taken as a 2nd card).</li>
       <li><strong>Claim a route</strong> — spend matching-color cards equal to the
         route's length to place your trains.</li>
-      <li><strong>Draw destination tickets</strong> — secret city-to-city goals
-        worth points if completed (and a penalty if not).</li>
+      <li><strong>Draw destination tickets</strong> — keep at least 1 of the 3
+        drawn.</li>
     </ul>
-    <p>When a player runs low on trains the last round begins. Most points from
-      routes, completed tickets, and the longest path wins.</p>`;
+    <p>When a player runs low on trains the <strong>final round</strong> begins —
+      everyone gets one last turn. Most points wins: routes + completed tickets +
+      a <strong>+10 bonus</strong> for the longest continuous path.</p>`;
   card.appendChild(how);
 
   howBtn.addEventListener('click', () => {
