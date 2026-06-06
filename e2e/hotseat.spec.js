@@ -42,6 +42,21 @@ test('hotseat: privacy masking + pass-the-device between two human turns', async
     .poll(() => page.evaluate(() => document.querySelector('#map')?.dataset.painted))
     .toBe('true');
 
+  // Full-rules opening: each human chooses which starting tickets to keep, one at
+  // a time, with the pass-the-device gate between consecutive humans.
+  // P1 chooses first (no gate — they're the first to look).
+  await expect.poll(async () => (await appState(page)).viewModel.phase).toBe('setup');
+  await page.locator('button[data-action="keep-tickets"]').click();
+  // Hand off to P2 (human) for THEIR starting choice → interstitial.
+  await expect(page.locator('[data-testid="pass-device"]')).toBeVisible();
+  await page.locator('button[data-action="ready"]').click();
+  await page.locator('button[data-action="keep-tickets"]').click();
+  // Last starting choice made → play begins; control returns to P1 (human→human
+  // handoff → another interstitial).
+  await expect(page.locator('[data-testid="pass-device"]')).toBeVisible();
+  await page.locator('button[data-action="ready"]').click();
+  await expect.poll(async () => (await appState(page)).viewModel.phase).toBe('play');
+
   // Privacy during play: the active human (P1) sees their own colors + tickets;
   // the opponent (P2) is masked to counts only.
   const vm0 = (await appState(page)).viewModel;

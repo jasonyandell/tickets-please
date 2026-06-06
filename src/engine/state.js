@@ -14,6 +14,7 @@ import {
   STARTING_TRAINS,
   STARTING_HAND,
   STARTING_TICKETS_DEAL,
+  STARTING_TICKETS_KEEP_MIN,
 } from './constants.js';
 import { makeRng, shuffle } from './rng.js';
 
@@ -113,9 +114,15 @@ export function refillFaceUp(piles, rng) {
  * @param {object[]} opts.tickets - the ticket list (CONTRACT §2).
  * @param {Array<{name:string,isAI?:boolean}>} opts.playerConfigs - 2..5 players.
  * @param {number} [opts.seed=1]
+ * @param {boolean} [opts.startingTicketChoice=false] - when true, the game opens
+ *   in a 'setup' phase: each player in turn is offered STARTING_TICKETS_DEAL
+ *   starting tickets and must keep at least STARTING_TICKETS_KEEP_MIN of them
+ *   (resolved via the normal pending/KEEP_TICKETS machinery in game.js). When
+ *   false (default) every player simply keeps all dealt starting tickets and the
+ *   game opens directly in 'play'.
  * @returns {object} state
  */
-export function initGame({ map, tickets, playerConfigs, seed = 1 }) {
+export function initGame({ map, tickets, playerConfigs, seed = 1, startingTicketChoice = false }) {
   if (!playerConfigs || playerConfigs.length < 2 || playerConfigs.length > 5) {
     throw new Error('tickets-please supports 2 to 5 players');
   }
@@ -146,15 +153,43 @@ export function initGame({ map, tickets, playerConfigs, seed = 1 }) {
   );
   deck = refilled.deck;
 
-  // Shuffle the ticket deck and deal each player their starting tickets.
-  // Default behavior: players keep all starting tickets (simplest correct rule).
+  // Shuffle the ticket deck.
   let ticketDeck = shuffle(tickets.map((t) => t.id), rng);
   const ticketById = new Map(tickets.map((t) => [t.id, t]));
-  for (const player of players) {
-    for (let i = 0; i < STARTING_TICKETS_DEAL && ticketDeck.length > 0; i++) {
-      const tid = ticketDeck.pop();
-      const t = ticketById.get(tid);
-      player.tickets.push({ ...t, done: false });
+
+  let phase = 'play';
+  let pending = null;
+  let setup = null;
+
+  if (startingTicketChoice) {
+    // Each player will CHOOSE which starting tickets to keep (>= the minimum),
+    // resolved one player at a time during a 'setup' phase. We pre-deal each
+    // player's offer up front (deterministic from the shuffle) and stash them in
+    // state.setup; game.js hands them out as each player resolves their keep.
+    phase = 'setup';
+    const offers = players.map(() => {
+      const offered = [];
+      for (let i = 0; i < STARTING_TICKETS_DEAL && ticketDeck.length > 0; i++) {
+        offered.push(ticketDeck.pop());
+      }
+      return offered;
+    });
+    setup = { offers, kind: 'startingTickets' };
+    // Player 0's choice is pending immediately.
+    pending = {
+      kind: 'tickets',
+      setup: true,
+      offered: offers[0].slice(),
+      minKeep: Math.min(STARTING_TICKETS_KEEP_MIN, offers[0].length),
+    };
+  } else {
+    // Default behavior: players keep all dealt starting tickets.
+    for (const player of players) {
+      for (let i = 0; i < STARTING_TICKETS_DEAL && ticketDeck.length > 0; i++) {
+        const tid = ticketDeck.pop();
+        const t = ticketById.get(tid);
+        player.tickets.push({ ...t, done: false });
+      }
     }
   }
 
@@ -168,9 +203,10 @@ export function initGame({ map, tickets, playerConfigs, seed = 1 }) {
     ticketDiscard: [],
     routeOwner: {},
     current: 0,
-    phase: 'play',
+    phase,
     finalTurnsLeft: null,
-    pending: null,
+    pending,
+    setup,
     cardsDrawnThisTurn: 0,
     moveCount: 0,
     log: [],
@@ -195,6 +231,9 @@ export function cloneState(state) {
     ticketDiscard: state.ticketDiscard.slice(),
     routeOwner: { ...state.routeOwner },
     pending: state.pending ? { ...state.pending, offered: state.pending.offered.slice() } : null,
+    setup: state.setup
+      ? { ...state.setup, offers: (state.setup.offers || []).map((o) => o.slice()) }
+      : (state.setup === undefined ? undefined : null),
     log: state.log.slice(),
     winner: state.winner ? state.winner.slice() : null,
   };

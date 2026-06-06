@@ -91,6 +91,32 @@ test('chooseAction always returns a legal move over full self-played games', () 
   }
 });
 
+test('chooseAction drives a full game with startingTicketChoice (setup phase) to completion', () => {
+  for (const seed of [1, 7, 42]) {
+    let state = initGame({
+      map: GAME_MAP, tickets: TICKETS,
+      playerConfigs: [{ name: 'A', isAI: true }, { name: 'B', isAI: true }, { name: 'C', isAI: true }],
+      seed, startingTicketChoice: true,
+    });
+    assert.equal(state.phase, 'setup', `seed ${seed}: opens in setup`);
+    let sawPlay = false;
+    let turns = 0;
+    while (state.phase !== 'ended' && turns < 8000) {
+      const action = chooseAction(state, GAME_MAP);
+      assertLegal(state, action);
+      state = applyAction(state, action, GAME_MAP);
+      if (state.phase === 'play' || state.phase === 'finalRound') sawPlay = true;
+      turns += 1;
+    }
+    assert.equal(state.phase, 'ended', `seed ${seed}: game did not end`);
+    assert.ok(sawPlay, `seed ${seed}: setup transitioned into play`);
+    // Each AI kept at least the starting minimum.
+    for (const p of state.players) {
+      assert.ok(p.tickets.length >= 2, `seed ${seed}: P${p.id} kept ${p.tickets.length} starting tickets`);
+    }
+  }
+});
+
 // ---------------------------------------------------------------------------
 // 2. Pending ticket choice resolves with a legal KEEP_TICKETS.
 // ---------------------------------------------------------------------------

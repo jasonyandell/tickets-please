@@ -384,7 +384,8 @@ function buildPrompt({ gameOver, pending, mustDrawSecond, forcedPass, curIdx, pl
   if (pending) {
     const offered = Array.isArray(pending.offered) ? pending.offered.length : 0;
     const minKeep = pending.minKeep ?? 1;
-    return `${name}: keep at least ${minKeep} of ${offered} drawn tickets${lap}`;
+    const which = pending.setup ? 'starting' : 'drawn';
+    return `${name}: keep at least ${minKeep} of ${offered} ${which} tickets${lap}`;
   }
   if (mustDrawSecond) {
     return `${name}: draw your 2nd card (deck or a non-wild face-up card)${lap}`;

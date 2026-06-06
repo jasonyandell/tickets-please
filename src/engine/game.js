@@ -22,7 +22,13 @@ import {
   KEEP_TICKETS,
   PASS,
 } from './actions.js';
-import { WILD, TICKETS_DEAL, TICKETS_KEEP_MIN, ENDGAME_TRAIN_THRESHOLD } from './constants.js';
+import {
+  WILD,
+  TICKETS_DEAL,
+  TICKETS_KEEP_MIN,
+  STARTING_TICKETS_KEEP_MIN,
+  ENDGAME_TRAIN_THRESHOLD,
+} from './constants.js';
 
 // Build a deterministic rng keyed off the current state. Used whenever the
 // engine needs randomness during a move (deck reshuffle, face-up refill).
@@ -292,6 +298,34 @@ export function applyAction(state, action, map) {
       next.ticketDeck.push(...returned);
 
       next.pending = null;
+
+      // --- Starting-ticket SETUP phase --------------------------------------
+      // Each player chooses their starting tickets in turn, then the game opens
+      // in 'play'. A setup keep does NOT take a normal turn (no card draw, no
+      // train-threshold/finalRound bookkeeping): we simply advance to the next
+      // player and offer them their pre-dealt starting tickets.
+      if (next.phase === 'setup') {
+        next.log.push(`P${player.id} kept ${keep.length} starting ticket${keep.length === 1 ? '' : 's'}`);
+        const nextPlayer = next.current + 1;
+        if (nextPlayer < next.players.length) {
+          next.current = nextPlayer;
+          const offered = (next.setup && next.setup.offers[nextPlayer]) || [];
+          next.pending = {
+            kind: 'tickets',
+            setup: true,
+            offered: offered.slice(),
+            minKeep: Math.min(STARTING_TICKETS_KEEP_MIN, offered.length),
+          };
+        } else {
+          // Last player has chosen — the real game begins.
+          next.phase = 'play';
+          next.current = 0;
+          next.setup = null;
+          next.log.push('All players have chosen starting tickets — game on!');
+        }
+        return next;
+      }
+
       next.log.push(`P${player.id} kept ${keep.length} tickets`);
       endTurn(next, map, player);
       return next;

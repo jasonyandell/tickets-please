@@ -241,7 +241,7 @@ function pendingTickets(state) {
   if (!state) return null;
   const pend = state.pending;
   if (pend && pend.kind === 'tickets' && Array.isArray(pend.offered) && pend.offered.length > 0) {
-    return { ids: pend.offered.slice(), minKeep: pend.minKeep ?? 1 };
+    return { ids: pend.offered.slice(), minKeep: pend.minKeep ?? 1, setup: !!pend.setup };
   }
   return null;
 }
@@ -526,6 +526,9 @@ function newGame(numPlayers, configs, seed) {
       tickets,
       playerConfigs,
       seed: gameSeed,
+      // Full rules: each player chooses which of 3 dealt starting tickets to keep
+      // (minimum 2), resolved one player at a time in a 'setup' phase before play.
+      startingTicketChoice: true,
     });
   } catch (err) {
     log(`initGame failed: ${err && err.message ? err.message : err}`);

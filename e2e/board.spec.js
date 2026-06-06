@@ -38,6 +38,17 @@ function attachErrorCollectors(page) {
 
 const appState = (page) => page.evaluate(() => window.__APP__);
 
+// Full rules open with each player choosing which of 3 dealt starting tickets to
+// keep (>= 2). For the active human this surfaces the ticket-keep checklist; keep
+// the default (all checked) and confirm. No-op if no choice is showing.
+async function resolveStartingTickets(page) {
+  const keep = page.locator('button[data-action="keep-tickets"]');
+  if (await keep.count()) {
+    await expect(keep).toBeEnabled();
+    await keep.click();
+  }
+}
+
 test('menu → setup → start → play a turn (contract, no pixels)', async ({ page }) => {
   const errors = attachErrorCollectors(page);
 
@@ -64,6 +75,11 @@ test('menu → setup → start → play a turn (contract, no pixels)', async ({ 
   await expect
     .poll(() => page.evaluate(() => document.querySelector('#map')?.dataset.painted))
     .toBe('true');
+
+  // 5b. Starting-ticket selection: P1 (human) keeps the default set; the AI
+  //     resolves its own choice on a timer, after which real play begins.
+  await resolveStartingTickets(page);
+  await expect.poll(async () => (await appState(page)).viewModel.phase).toBe('play');
 
   // 6. The view-model exposes a current player, a prompt, and routes.
   const before = await appState(page);
@@ -112,6 +128,9 @@ test('hover a route shows its claimability; claim a claimable route', async ({ p
   await expect
     .poll(() => page.evaluate(() => document.querySelector('#map')?.dataset.painted))
     .toBe('true');
+
+  await resolveStartingTickets(page);
+  await expect.poll(async () => (await appState(page)).viewModel.phase).toBe('play');
 
   // Pick a claimable route from the contract — prefer a length-1 route so the
   // located point sits squarely on a single car box (robust hover + click).

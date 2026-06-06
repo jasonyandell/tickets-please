@@ -183,7 +183,8 @@ function buildTicketKeep(pend, { human, isAITurn, curName, ticketById, ticketLab
   tdiv.dataset.testid = 'ticket-keep';
 
   const head = el('div', 'tk-head');
-  head.textContent = `Choose tickets to keep (at least ${minKeep} of ${pend.ids.length})`;
+  const noun = pend.setup ? 'starting tickets' : 'tickets';
+  head.textContent = `Choose ${noun} to keep (at least ${minKeep} of ${pend.ids.length})`;
   tdiv.appendChild(head);
 
   const list = el('div', 'tk-list');

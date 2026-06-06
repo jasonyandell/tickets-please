@@ -283,6 +283,82 @@ test('DETERMINISM: applyActions twice from same seed+actions yields identical st
   assert.deepEqual(start, startAgain);
 });
 
+// ---- Starting-ticket selection (setup phase) -------------------------------
+
+// A ticket list big enough for 2 players to each be offered 3 starting tickets.
+const SETUP_TICKETS = [
+  { id: 't1', from: 'A', to: 'D', points: 10 },
+  { id: 't2', from: 'A', to: 'B', points: 3 },
+  { id: 't3', from: 'B', to: 'C', points: 2 },
+  { id: 't4', from: 'A', to: 'C', points: 5 },
+  { id: 't5', from: 'B', to: 'D', points: 6 },
+  { id: 't6', from: 'C', to: 'D', points: 4 },
+];
+const SETUP_MAP = { ...FIXTURE, tickets: SETUP_TICKETS };
+
+test('startingTicketChoice: opens in setup phase with player 0 pending (deal 3, keep >= 2)', () => {
+  const cfgs = [{ name: 'P0' }, { name: 'P1' }];
+  const s = initGame({ map: SETUP_MAP, tickets: SETUP_TICKETS, playerConfigs: cfgs, seed: 7, startingTicketChoice: true });
+  assert.equal(s.phase, 'setup');
+  assert.equal(s.current, 0);
+  assert.ok(s.pending && s.pending.kind === 'tickets' && s.pending.setup === true);
+  assert.equal(s.pending.offered.length, 3, 'three starting tickets offered');
+  assert.equal(s.pending.minKeep, 2, 'must keep at least 2');
+  // No tickets are in any hand yet — they are chosen, not auto-kept.
+  assert.equal(s.players[0].tickets.length, 0);
+  assert.equal(s.players[1].tickets.length, 0);
+  // No train cards have been spent/changed by the setup deal; hands are dealt.
+  assert.ok(s.setup && Array.isArray(s.setup.offers) && s.setup.offers.length === 2);
+});
+
+test('startingTicketChoice: keeping rejects < minKeep, accepts a valid keep, advances to next player', () => {
+  const cfgs = [{ name: 'P0' }, { name: 'P1' }];
+  const s0 = initGame({ map: SETUP_MAP, tickets: SETUP_TICKETS, playerConfigs: cfgs, seed: 7, startingTicketChoice: true });
+  const offered0 = s0.pending.offered.slice();
+
+  // Keeping only 1 is illegal (below the minimum of 2).
+  assert.throws(() => applyAction(s0, keepTickets([offered0[0]]), SETUP_MAP), /at least/i);
+
+  // Keep 2 of the 3 offered.
+  const s1 = applyAction(s0, keepTickets([offered0[0], offered0[1]]), SETUP_MAP);
+  assert.equal(s1.phase, 'setup', 'still in setup until everyone has chosen');
+  assert.equal(s1.current, 1, 'advanced to player 1');
+  assert.equal(s1.players[0].tickets.length, 2, 'player 0 kept exactly 2');
+  assert.ok(s1.pending && s1.pending.setup === true, 'player 1 now has a pending starting choice');
+  assert.equal(s1.pending.offered.length, 3);
+  // The one returned ticket went back to the bottom of the ticket deck.
+  assert.ok(s1.ticketDeck.includes(offered0[2]));
+});
+
+test('startingTicketChoice: after the LAST player chooses, the game opens in play (current=0)', () => {
+  const cfgs = [{ name: 'P0' }, { name: 'P1' }];
+  let s = initGame({ map: SETUP_MAP, tickets: SETUP_TICKETS, playerConfigs: cfgs, seed: 7, startingTicketChoice: true });
+  s = applyAction(s, keepTickets(s.pending.offered.slice(0, 2)), SETUP_MAP); // P0
+  s = applyAction(s, keepTickets(s.pending.offered.slice()), SETUP_MAP);     // P1 keeps all 3
+  assert.equal(s.phase, 'play', 'play begins after the last starting choice');
+  assert.equal(s.current, 0, 'first player to act is player 0');
+  assert.equal(s.pending, null, 'no pending choice remains');
+  assert.equal(s.setup, null, 'setup scratch cleared');
+  assert.equal(s.players[0].tickets.length, 2);
+  assert.equal(s.players[1].tickets.length, 3);
+  assert.equal(s.cardsDrawnThisTurn, 0, 'a fresh turn — setup keeps did not draw cards');
+});
+
+test('startingTicketChoice: during setup only KEEP_TICKETS is legal (no draws/claims)', () => {
+  const cfgs = [{ name: 'P0' }, { name: 'P1' }];
+  const s = initGame({ map: SETUP_MAP, tickets: SETUP_TICKETS, playerConfigs: cfgs, seed: 7, startingTicketChoice: true });
+  assert.throws(() => applyAction(s, drawDeck(), SETUP_MAP), /pending/i);
+});
+
+test('startingTicketChoice off (default): keeps all tickets and opens in play', () => {
+  const cfgs = [{ name: 'P0' }, { name: 'P1' }];
+  const s = initGame({ map: SETUP_MAP, tickets: SETUP_TICKETS, playerConfigs: cfgs, seed: 7 });
+  assert.equal(s.phase, 'play');
+  assert.equal(s.pending, null);
+  assert.equal(s.players[0].tickets.length, 3);
+  assert.equal(s.players[1].tickets.length, 3);
+});
+
 test('integration: real map.js can drive applyActions deterministically', async () => {
   const { MAP, TICKETS } = await import('../src/engine/map.js');
   const cfgs = [{ name: 'A' }, { name: 'B' }];
