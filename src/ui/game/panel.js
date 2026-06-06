@@ -338,6 +338,10 @@ function buildPlayerBlock(p, gameOver) {
     if (entries.length === 0) {
       handRow.appendChild(noteEl('(no cards)'));
     } else {
+      // Label the revealed own-hand so it obviously reads as the player's cards.
+      const lbl = labelEl(`Your hand (${p.handCount})`);
+      lbl.dataset.testid = 'my-hand';
+      block.appendChild(lbl);
       entries.forEach((color) => handRow.appendChild(pipGroup(color, p.handByColor[color])));
     }
   } else {
