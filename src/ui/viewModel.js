@@ -15,7 +15,7 @@
 // revealed (the endgame scoreboard shows all hands/tickets).
 
 import { legalMoves, canonicalSpend, canClaimRoute } from '../engine/rules.js';
-import { ticketComplete } from '../engine/scoring.js';
+import { ticketComplete, longestPath } from '../engine/scoring.js';
 import {
   CLAIM_ROUTE,
   DRAW_DECK,
@@ -280,13 +280,35 @@ export function buildViewModel(state, map, configs = [], opts = {}) {
     };
   });
 
+  // --- Longest continuous path (live) -------------------------------------
+  // Each player's current longest trail over their owned routes. The player(s)
+  // holding the strictly-maximum non-zero length are the live longest-route
+  // leader(s) — i.e. who would take the +10 bonus if the game ended now. This is
+  // public information (claimed routes are visible), so it is privacy-safe.
+  const longestByIndex = players.map((p, i) => {
+    const pid = p && p.id != null ? p.id : i;
+    try { return longestPath(state, pid, map) || 0; } catch (_) { return 0; }
+  });
+  const maxLongest = longestByIndex.reduce((m, v) => Math.max(m, v), 0);
+  const longestLeaderIndices = maxLongest > 0
+    ? longestByIndex.map((v, i) => (v === maxLongest ? i : -1)).filter((i) => i >= 0)
+    : [];
+
   // --- Standings (live, always-visible) -----------------------------------
   // Rank players by current score (desc), ties broken by player index so the
   // order is stable. rank is 1-based and SHARED across ties (1,1,3,…). The
   // leader flag marks every player tied for the top score, but only when that
   // top score is > 0 (a 0-0 opening isn't a "lead").
+  const longestLeaderSet = new Set(longestLeaderIndices);
   const standings = playerViews
-    .map((pv) => ({ index: pv.index, name: pv.name, score: pv.score, isAI: pv.isAI }))
+    .map((pv) => ({
+      index: pv.index,
+      name: pv.name,
+      score: pv.score,
+      isAI: pv.isAI,
+      longestPath: longestByIndex[pv.index] || 0,
+      hasLongest: longestLeaderSet.has(pv.index),
+    }))
     .sort((a, b) => b.score - a.score || a.index - b.index);
   const topScore = standings.length ? standings[0].score : 0;
   let prevScore = null;
@@ -337,6 +359,8 @@ export function buildViewModel(state, map, configs = [], opts = {}) {
     secretForIndex,
     standings,
     leaderIndex,
+    longestLeaderIndices,
+    longestPathMax: maxLongest,
     finalRound,
     finalTurnsLeft,
     scoreboard,

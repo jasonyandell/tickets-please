@@ -175,6 +175,17 @@ button.primary:hover { background: #2358b0; }
 .standmark { width: 24px; text-align: center; font-variant-numeric: tabular-nums; }
 .standname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .standpts { margin-left: auto; font-variant-numeric: tabular-nums; color: #444; }
+.longest-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: #5a3d1a;
+  background: #f3e2c0;
+  border: 1px solid #d8b878;
+  border-radius: 4px;
+  padding: 0 4px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
 
 /* ---- players ---- */
 .player {

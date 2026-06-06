@@ -161,6 +161,10 @@ test('hover a route shows its claimability; claim a claimable route', async ({ p
   expect(after.lastAction.type).toBe('CLAIM_ROUTE');
   expect(after.lastAction.by, 'recorded actor is the human (P1)').toBe(0);
 
+  // Claiming the first route makes P1 the live longest-route leader (length > 0).
+  expect(after.viewModel.longestLeaderIndices, 'P1 now holds the longest route').toContain(0);
+  expect(after.viewModel.longestPathMax).toBeGreaterThan(0);
+
   await page.screenshot({ path: 'artifacts/board-claim.png', fullPage: true });
   expect(errors, `page/console errors:\n${errors.join('\n')}`).toEqual([]);
 });

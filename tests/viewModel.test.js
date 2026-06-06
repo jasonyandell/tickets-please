@@ -253,6 +253,35 @@ test('scoreboard totals match finalScores; winnerIndex is the top total', () => 
   assert.ok(Array.isArray(vm.players[1].tickets));
 });
 
+// --- live longest-route ------------------------------------------------------
+
+test('longest route: no claims → no leader, max 0, no hasLongest flags', () => {
+  const vm = buildViewModel(makeState(), MAP, CONFIGS, {});
+  assert.equal(vm.longestPathMax, 0);
+  assert.deepEqual(vm.longestLeaderIndices, []);
+  for (const s of vm.standings) assert.equal(s.hasLongest, false);
+});
+
+test('longest route: the player with the longer trail is the live longest-route leader', () => {
+  // Alice owns r_ab(2) + r_bc(3) = a trail of 5; Bob owns r_ac(2) = 2.
+  const state = makeState({
+    players: [
+      { id: 0, name: 'Alice', isAI: false, hand: {}, trains: 40, tickets: [], claimedRoutes: ['r_ab', 'r_bc'], score: 6 },
+      { id: 1, name: 'Bob', isAI: true, hand: {}, trains: 43, tickets: [], claimedRoutes: ['r_ac'], score: 2 },
+    ],
+    routeOwner: { r_ab: 0, r_bc: 0, r_ac: 1 },
+  });
+  const vm = buildViewModel(state, MAP, CONFIGS, {});
+  assert.equal(vm.longestPathMax, 5);
+  assert.deepEqual(vm.longestLeaderIndices, [0]);
+  const alice = vm.standings.find((s) => s.index === 0);
+  const bob = vm.standings.find((s) => s.index === 1);
+  assert.equal(alice.longestPath, 5);
+  assert.equal(alice.hasLongest, true);
+  assert.equal(bob.longestPath, 2);
+  assert.equal(bob.hasLongest, false);
+});
+
 // --- standings (live ranking + leader) --------------------------------------
 
 test('standings: sorted by score desc, ranked, leader marked', () => {

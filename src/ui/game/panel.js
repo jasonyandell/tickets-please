@@ -313,6 +313,15 @@ function buildStandings(standings) {
     name.textContent = `${s.name}${s.isAI ? ' (AI)' : ''}`;
     row.appendChild(name);
 
+    // Live longest-route holder(s) — who would take the +10 bonus right now.
+    if (s.hasLongest) {
+      const badge = el('span', 'longest-badge');
+      badge.dataset.testid = `longest-${s.index}`;
+      badge.title = `Longest route so far: ${s.longestPath} (+10 if it holds)`;
+      badge.textContent = `🛤 ${s.longestPath}`;
+      row.appendChild(badge);
+    }
+
     const pts = el('span', 'standpts');
     pts.textContent = `${s.score} pts`;
     row.appendChild(pts);
