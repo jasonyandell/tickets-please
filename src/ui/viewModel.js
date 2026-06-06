@@ -271,6 +271,23 @@ export function buildViewModel(state, map, configs = [], opts = {}) {
     };
   });
 
+  // --- Standings (live, always-visible) -----------------------------------
+  // Rank players by current score (desc), ties broken by player index so the
+  // order is stable. rank is 1-based and SHARED across ties (1,1,3,…). The
+  // leader flag marks every player tied for the top score, but only when that
+  // top score is > 0 (a 0-0 opening isn't a "lead").
+  const standings = playerViews
+    .map((pv) => ({ index: pv.index, name: pv.name, score: pv.score, isAI: pv.isAI }))
+    .sort((a, b) => b.score - a.score || a.index - b.index);
+  const topScore = standings.length ? standings[0].score : 0;
+  let prevScore = null;
+  standings.forEach((s, i) => {
+    s.rank = (i > 0 && s.score === prevScore) ? standings[i - 1].rank : i + 1;
+    s.isLeader = topScore > 0 && s.score === topScore;
+    prevScore = s.score;
+  });
+  const leaderIndex = (standings.length && standings[0].isLeader) ? standings[0].index : null;
+
   // --- Scoreboard + winner (game over) ------------------------------------
   const scoreboard = scores
     ? scores
@@ -308,6 +325,8 @@ export function buildViewModel(state, map, configs = [], opts = {}) {
     faceUp,
     players: playerViews,
     secretForIndex,
+    standings,
+    leaderIndex,
     scoreboard,
     winnerIndex,
   };

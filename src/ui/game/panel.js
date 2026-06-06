@@ -15,6 +15,7 @@
 //   - [data-testid="prompt"]                       — the human-readable next step
 //   - button[data-action][data-reason] + `disabled` — each action + why-if-blocked
 //   - [data-action="draw-faceup"][data-slot]        — clickable face-up cards
+//   - [data-testid="standings"] / [data-testid="rank-N"] — live ranking + leader
 //   - [data-testid="player-N"] / [data-testid="score-N"] — per-player blocks
 
 import { playerColor, cardColorCss } from '../render.js';
@@ -84,6 +85,9 @@ export function renderPanel(panel, ctx) {
   } else {
     panel.appendChild(buildActionBar({ a, human, isAITurn, gameOver, curName, onDrawDeck, onDrawTickets, onPass }));
   }
+
+  // --- Standings: live ranking so the leader is always visible -----------
+  panel.appendChild(buildStandings(vm.standings));
 
   // --- Face-up row -------------------------------------------------------
   panel.appendChild(buildFaceUp(vm.faceUp, { human, mustDrawSecond: !!a.mustDrawSecond, onDrawFaceUp }));
@@ -259,6 +263,48 @@ function buildFaceUp(faceUp, { human, mustDrawSecond, onDrawFaceUp }) {
   });
   if (shown === 0) row.appendChild(noteEl('(none)'));
   wrap.appendChild(row);
+  return wrap;
+}
+
+// ---------------------------------------------------------------------------
+// Standings — current ranking by score; the leader (top score > 0) is marked.
+// Scores/points are public info, so this is privacy-safe for all players.
+//
+// Contract hooks: [data-testid="standings"] wraps the list;
+// each row is [data-testid="rank-N"] (N = player index) carrying
+// data-rank / data-leader for the e2e suite to read structurally.
+// ---------------------------------------------------------------------------
+
+function buildStandings(standings) {
+  const wrap = el('div', 'standings');
+  wrap.dataset.testid = 'standings';
+  wrap.appendChild(labelEl('Standings'));
+  const rows = Array.isArray(standings) ? standings : [];
+  rows.forEach((s) => {
+    const row = el('div', 'standrow');
+    row.dataset.testid = `rank-${s.index}`;
+    row.dataset.rank = String(s.rank);
+    row.dataset.leader = s.isLeader ? 'true' : 'false';
+    if (s.isLeader) row.classList.add('leader');
+
+    const mark = el('span', 'standmark');
+    mark.textContent = s.isLeader ? '🥇' : `#${s.rank}`;
+    row.appendChild(mark);
+
+    const dot = el('span', 'swatch');
+    dot.style.background = playerColor(s.index);
+    row.appendChild(dot);
+
+    const name = el('span', 'standname');
+    name.textContent = `${s.name}${s.isAI ? ' (AI)' : ''}`;
+    row.appendChild(name);
+
+    const pts = el('span', 'standpts');
+    pts.textContent = `${s.score} pts`;
+    row.appendChild(pts);
+
+    wrap.appendChild(row);
+  });
   return wrap;
 }
 

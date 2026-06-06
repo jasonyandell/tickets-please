@@ -226,6 +226,79 @@ test('scoreboard totals match finalScores; winnerIndex is the top total', () => 
   assert.ok(Array.isArray(vm.players[1].tickets));
 });
 
+// --- standings (live ranking + leader) --------------------------------------
+
+test('standings: sorted by score desc, ranked, leader marked', () => {
+  const state = makeState({
+    players: [
+      { id: 0, name: 'Alice', isAI: false, hand: {}, trains: 45, tickets: [], claimedRoutes: [], score: 4 },
+      { id: 1, name: 'Bob', isAI: true, hand: {}, trains: 45, tickets: [], claimedRoutes: [], score: 9 },
+    ],
+  });
+  const vm = buildViewModel(state, MAP, CONFIGS, {});
+  assert.equal(vm.standings.length, 2);
+  // Bob (9) leads Alice (4).
+  assert.equal(vm.standings[0].index, 1);
+  assert.equal(vm.standings[0].score, 9);
+  assert.equal(vm.standings[0].rank, 1);
+  assert.equal(vm.standings[0].isLeader, true);
+  assert.equal(vm.standings[1].index, 0);
+  assert.equal(vm.standings[1].rank, 2);
+  assert.equal(vm.standings[1].isLeader, false);
+  assert.equal(vm.leaderIndex, 1);
+});
+
+test('standings: ties share a rank and tie-break by index; both leaders flagged', () => {
+  const state = makeState({
+    players: [
+      { id: 0, name: 'Alice', isAI: false, hand: {}, trains: 45, tickets: [], claimedRoutes: [], score: 7 },
+      { id: 1, name: 'Bob', isAI: true, hand: {}, trains: 45, tickets: [], claimedRoutes: [], score: 7 },
+    ],
+  });
+  const vm = buildViewModel(state, MAP, CONFIGS, {});
+  // Both top with 7; stable order is by index, both rank 1, both leaders.
+  assert.equal(vm.standings[0].index, 0);
+  assert.equal(vm.standings[1].index, 1);
+  assert.equal(vm.standings[0].rank, 1);
+  assert.equal(vm.standings[1].rank, 1);
+  assert.equal(vm.standings[0].isLeader, true);
+  assert.equal(vm.standings[1].isLeader, true);
+  // leaderIndex points at the first (lowest-index) tied leader.
+  assert.equal(vm.leaderIndex, 0);
+});
+
+test('standings: a 0-0 opening has no leader', () => {
+  const vm = buildViewModel(makeState(), MAP, CONFIGS, {});
+  assert.equal(vm.standings.length, 2);
+  assert.equal(vm.standings.every((s) => s.isLeader === false), true);
+  assert.equal(vm.leaderIndex, null);
+  // Still ranked, stable by index when scores are equal.
+  assert.equal(vm.standings[0].rank, 1);
+  assert.equal(vm.standings[1].rank, 1);
+});
+
+test('standings: skipped rank after a tie (1,1,3) and uses game-over totals', () => {
+  // Three players with scores 5,5,2 -> ranks 1,1,3.
+  const state = makeState({
+    phase: 'ended',
+    players: [
+      { id: 0, name: 'Alice', isAI: false, hand: {}, trains: 45, tickets: [], claimedRoutes: [], score: 5 },
+      { id: 1, name: 'Bob', isAI: true, hand: {}, trains: 45, tickets: [], claimedRoutes: [], score: 5 },
+      { id: 2, name: 'Cara', isAI: true, hand: {}, trains: 45, tickets: [], claimedRoutes: [], score: 2 },
+    ],
+  });
+  // On game over, playerViews.score comes from the scores rows when present.
+  const scores = [
+    { playerId: 0, total: 5 },
+    { playerId: 1, total: 5 },
+    { playerId: 2, total: 2 },
+  ];
+  const vm = buildViewModel(state, MAP, [...CONFIGS, { name: 'Cara', isAI: true }], { gameOver: true, scores });
+  assert.deepEqual(vm.standings.map((s) => s.rank), [1, 1, 3]);
+  assert.deepEqual(vm.standings.map((s) => s.score), [5, 5, 2]);
+  assert.equal(vm.standings.filter((s) => s.isLeader).length, 2);
+});
+
 // --- serializability (exposed on window.__APP__ for e2e to read) ------------
 
 test('view-model is plain JSON (round-trips with no loss) in play and game-over', () => {
