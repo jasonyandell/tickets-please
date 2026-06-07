@@ -123,6 +123,41 @@ export function clearSave(storage) {
 }
 
 // ---------------------------------------------------------------------------
+// Auto-reload policy — pure, clock-injected (NO Date.now / setTimeout here).
+//
+// The driver (main.js) owns the single setInterval and reads the real clock; it
+// asks this function whether a reload is due. Keeping the decision pure makes it
+// trivially unit-testable with injected timestamps — no fake timers, no waits.
+// ---------------------------------------------------------------------------
+
+/**
+ * Decide whether an auto-reload should fire right now.
+ *
+ * True iff we are still inside the "recently played" window AND at least one
+ * interval has elapsed since the last reload:
+ *   (now - lastPlayAt) <= windowMs    (a move happened within the last 5 min)
+ *   (now - lastReloadAt) >= intervalMs (we haven't reloaded in the last 30s)
+ *
+ * After `windowMs` of idle (no applied moves) it returns false, so the page
+ * stops reloading once the player walks away.
+ *
+ * @param {object} p
+ * @param {number} p.now - current time (ms epoch).
+ * @param {number|null} p.lastPlayAt - time of the last applied move (ms); null/NaN → never.
+ * @param {number} [p.lastReloadAt=0] - time of the last auto-reload (ms).
+ * @param {number} [p.intervalMs=30000] - min gap between reloads.
+ * @param {number} [p.windowMs=300000] - how long after a play we keep reloading.
+ * @returns {boolean}
+ */
+export function autoReloadDue({ now, lastPlayAt, lastReloadAt = 0, intervalMs = 30000, windowMs = 300000 }) {
+  if (!Number.isFinite(now)) return false;
+  if (!Number.isFinite(lastPlayAt)) return false; // never played → never auto-reload
+  if (now - lastPlayAt > windowMs) return false;  // idle past the window → stop
+  if (now - lastReloadAt < intervalMs) return false; // too soon since last reload
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // Restore — rebuild the recorder (and thus the live state) by pure replay.
 // ---------------------------------------------------------------------------
 
