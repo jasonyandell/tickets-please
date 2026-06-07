@@ -51,22 +51,41 @@ over `<section data-screen>` elements — one per screen
   screen — the game stays mounted beneath it (no canvas resize/repaint race).
 - `game/panel.js` — the in-game side **HUD**, a pure view over the published
   view-model: the turn banner + next-step prompt, the action bar (each button
-  disabled-with-reason), the ticket-keep checklist, **live standings**, the
-  face-up row, per-player blocks (privacy-masked), and the log.
+  disabled-with-reason) including **↶ Undo / ↷ Redo** (gated by
+  `vm.canUndo`/`vm.canRedo`, self-explaining when there's nothing to undo/redo),
+  the ticket-keep checklist, **live standings**, the face-up row (wilds render as
+  the multicolor rainbow chip, and lock during the 2nd-card draw), per-player
+  blocks (privacy-masked, wild hand-pips also rainbow), and the log. There is no
+  card-color legend — colors are self-evident on the cards, so the panel dropped
+  it for space.
 - `game/board.js` — canvas **interaction + route-clarity** layer: hover (or tap)
   any route and a tooltip near the cursor shows its cost, whether you can claim
   it, and — when you can't — exactly why. Reads `vm.routes` + live geometry;
   exposes `window.__BOARD__` (a separate inspection surface) for the e2e suite.
 - `main.js` — the thin controller: wires the engine + [[ai]] + renderer, owns
   the engine `state`, builds & publishes the view-model each render, routes
-  between screens, records `lastAction`, drives AI turns on a timer, and gates
-  the pass-the-device handoff.
+  between screens, records `lastAction`, drives AI turns on a timer, gates the
+  pass-the-device handoff, and owns the `history.js` **undo/redo recorder** —
+  recording every applied action onto its tape and binding Undo/Redo (buttons +
+  Cmd/Ctrl+Z / Cmd/Ctrl+Shift+Z) to the recorder's playhead.
 - `render.js` — draws the [[map]] onto the canvas (labeled city dots, routes as
-  runs of colored boxes, claimed routes recolored to the owner, double routes as
-  offset parallel lines). Sets the single smoke flag `canvas.dataset.painted`.
+  runs of colored boxes, claimed routes recolored to the owner + a small **owner
+  token** — a light disc ringed in the owner's color bearing their initial,
+  double routes as offset parallel lines). Also paints the always-on **weighted
+  ticket heat-map**: routes serving the active human's incomplete tickets get a
+  teal glow whose blur + opacity scale with `vm.ticketRouteWeights[id]`, so a
+  route on two tickets' shortest paths glows harder than one (`drawBox`'s
+  `ticketWeight`). Sets the single smoke flag `canvas.dataset.painted`.
+- `history.js` — **undo/redo as a recorder/player over the engine** (see the
+  *Undo/redo* section below). Pure: it owns an
+  append-only action **tape** + a **cursor** and computes state by *replaying*
+  the tape prefix through the engine reducer. No DOM, timers, or globals; the
+  reducer is injected, so it unit-tests directly.
 - `layout.js` — **pure, testable geometry**: route "car" boxes, `hitTestRoute`,
   fit/transform helpers. No DOM, so it unit-tests cleanly.
-- `style.css` — layout and the player/card color palette.
+- `style.css` — layout and the player/card color palette. The **wild /
+  locomotive** card is a distinctive multicolor **rainbow chip** (`.card.wild`,
+  `.pip.wild`), never a flat gray — so it always reads as "any color".
 
 ## The guided turn loop
 The UI's job is **legibility** — at every moment the player can tell whose turn
@@ -92,6 +111,44 @@ click to claim) from merely *affordable* (you hold the cards but a phase/rule
 blocks it). A blocked click pins the reason briefly. Claiming itself is still
 applied by `main.js`'s canvas click handler.
 
+### Weighted ticket heat-map (always on)
+Orthogonal to claimability, the board is always a **"where to build first" map**.
+`viewModel.js` derives `ticketRouteWeights` (`ticketRouteWeights(state, player,
+map, routeOwner)` → `{ routeId: count }`): for each of the active human's
+**incomplete** destination tickets, it shortest-paths from end to end over a
+graph where *owned* routes are free connectors (weight 0), *unclaimed* routes
+cost their length, and *opponents'* routes are impassable — then counts how many
+tickets' paths cross each route. `render.js` paints those routes with a teal glow
+whose blur + opacity **scale with the weight** (capped), so a route serving two
+tickets at once glows hotter than one. Completed tickets contribute nothing, and
+the derivation is empty on an AI turn — **opponent tickets never leak** (the same
+hotseat-privacy rule, unit-tested). This *supersedes* the earlier flat
+ticket-route highlight: overlap now reads as intensity, not just on/off.
+
+A claimed route is recolored to its owner and stamped with a small **owner
+token** — a light disc ringed in the owner's color carrying their initial — so
+ownership is legible even where two players' colors are close.
+
+## Undo/redo: the recorder/player model
+Undo/redo is a **video recorder over the deterministic engine** (`history.js`),
+not a stack of inverse deltas. The model is a **tape + playhead**:
+- The seed + an append-only **tape** of applied actions fully determine the game,
+  so *the tape is the game*. The **cursor** is the playhead — how many tape
+  entries are currently applied.
+- The shown state is always a pure **replay** of `entries[0..cursor]` through the
+  engine reducer (`applyActions`). Undo/redo never mutate state to reverse a move;
+  they only move the cursor and recompute. This leans directly on
+  [[determinism]] — same prefix ⇒ same state, every time, with no timers.
+- Undo/redo operate on **human decision points**: undo rewinds *past* any AI
+  actions to the previous human action (so the table lands waiting on that human
+  and the AI never auto-replays); redo fast-forwards to the next human action (or
+  the tape's end). Each entry carries an `isAI` flag that drives this skip.
+- Recording a new action while the cursor sits before the end **branches**: the
+  tape is truncated at the cursor and the new action appended — a genuine do-over.
+
+The module is pure (log + cursor, reducer injected) so it unit-tests without a
+browser; `main.js` owns the recorder instance and wires the buttons + keyboard.
+
 ## Hotseat privacy
 Multiple humans share one device, so secrets must not leak. The view-model
 exposes only the **active human's own** hand colors + ticket details; every other
@@ -108,10 +165,13 @@ the view-model is rebuilt. All rules logic stays in the engine.
 
 ## Testing
 Pure unit tests are the primary gate (see [[testing]]):
-- `tests/viewModel.test.js` (22) — the **pure derivation**: actions/claimability,
-  hotseat masking, standings/longest-route, scoreboard, no-mutation, JSON round-trip.
+- `tests/viewModel.test.js` (30) — the **pure derivation**: actions/claimability,
+  hotseat masking, standings/longest-route, scoreboard, the weighted ticket
+  heat-map (overlap accumulates; empty on an AI turn), no-mutation, JSON round-trip.
 - `tests/layout.test.js` (11) — the **pure geometry** (box counts, hit-testing,
   double routes).
+- `tests/history.test.js` (9) — the **undo/redo recorder**: replay-of-prefix,
+  undo skips AI to the previous human action, redo, and branch-on-new-action.
 
 Real-browser behaviour is proven by the **contract-based** e2e suite
 (`npm run test:e2e`, Playwright, dev-only) — it drives scripted play-throughs and

@@ -58,6 +58,11 @@ Inside the UI the data path runs through **one pure derivation layer**:
   - `screens/*` — per-screen DOM (`menu`, `setup`, `gameover`, `passdevice`).
   - `game/panel.js` (HUD) + `game/board.js` (canvas interaction) — pure views
     over the view-model.
+  - `history.js` — **undo/redo recorder/player**: an append-only action tape + a
+    cursor; state is a pure *replay* of the tape prefix through the engine
+    reducer (never an inverse-delta mutation), so it rides directly on
+    [[determinism]]. Undo/redo move the playhead across human decision points
+    (skipping AI). See [[ui]].
   - `main.js` — thin controller wiring engine + AI + renderer; `render.js` +
     `layout.js` — canvas drawing + pure geometry.
 

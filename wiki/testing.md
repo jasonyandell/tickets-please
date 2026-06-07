@@ -6,8 +6,8 @@ is verified through a **deterministic state contract** — never by sampling
 pixels. Unit tests use Node's built-in runner — **zero dependencies**:
 
 ```
-npm test           # node --test over tests/*.test.js   (115 tests)
-npm run test:e2e   # Playwright contract play-throughs   (3 tests, dev-only)
+npm test           # node --test over tests/*.test.js   (164 tests)
+npm run test:e2e   # Playwright contract play-throughs   (7 tests, dev-only)
 npm run validate   # check the map against its invariants
 node tools/simulate.js [games] [seed]   # play full AI-vs-AI games
 ```
@@ -16,7 +16,7 @@ node tools/simulate.js [games] [seed]   # play full AI-vs-AI games
 > so the script globs `tests/*.test.js` explicitly (a shell glob, so CI on Node
 > 20 works too — see [[log]] 2026-05-30 deploy corrections).
 
-## Unit suites (115 tests total)
+## Unit suites (164 tests total)
 - **`scoring.test.js`** (13) — route points, ticket completion, longest path,
   `finalScores` incl. longest-path ties. See [[scoring]].
 - **`rules.test.js`** (34) — `canClaimRoute` (colored/gray/wild, trains, double
@@ -28,11 +28,22 @@ node tools/simulate.js [games] [seed]   # play full AI-vs-AI games
   claims usefully, is deterministic. See [[ai]].
 - **`layout.test.js`** (11) — pure UI geometry (box counts, hit-testing, double
   routes). See [[ui]].
-- **`viewModel.test.js`** (22) — the **pure UI derivation** (`buildViewModel`):
+- **`viewModel.test.js`** (30) — the **pure UI derivation** (`buildViewModel`):
   derived actions/claimability + per-route blocked reasons, **hotseat privacy
   masking** (active human revealed, opponents counts-only), live standings &
-  longest-route leader, the game-over scoreboard/winner, no-mutation, and a JSON
-  round-trip (the view-model is plain data). See [[ui]].
+  longest-route leader, the game-over scoreboard/winner, the **weighted ticket
+  heat-map** (`ticketRouteWeights`: overlapping tickets accumulate, complete
+  tickets add nothing, empty on an AI turn so tickets never leak), no-mutation,
+  and a JSON round-trip (the view-model is plain data). See [[ui]].
+- **`history.test.js`** (9) — the **undo/redo recorder/player** (`history.js`):
+  state as a pure replay of the tape prefix, undo skipping AI to the previous
+  human action, redo, and branch-on-new-action (truncate at the cursor). See
+  [[ui]].
+- **`contrast.test.js`** (32) — a **WCAG AA contrast gate** over the design-token
+  palette: parses the `:root` `--token: #hex` colors in `src/ui/style.css` and
+  asserts every (text, background) pair the UI paints clears the AA threshold, so
+  a palette tweak can't dim a token below legibility. Pure (reads a file, does
+  math; no DOM).
 - **`simulation.test.js`** (5) — **property-based** invariants over many full
   games (see below).
 
@@ -81,7 +92,7 @@ sample with a wrong picture proves nothing. It has been fully replaced by
 deterministic, contract-based play-throughs. See [[browser-verify]] and [[log]]
 (2026-06-06).
 
-## e2e suites (3 tests, `npm run test:e2e`)
+## e2e suites (7 tests, `npm run test:e2e`)
 Playwright, dev-only — the shipped game stays zero-dependency. Each test boots
 the built `dist/`, drives a scripted play-through, and asserts FACTS via the
 contract above (plus a `board.png` screenshot as human-checkable evidence):
@@ -92,3 +103,9 @@ contract above (plus a `board.png` screenshot as human-checkable evidence):
 - **`hotseat.spec.js`** (1) — two humans: opponents are masked to counts only,
   and the pass-the-device overlay appears only between consecutive human turns,
   re-masking the previous player on acknowledge.
+- **`undo.spec.js`** (1) — after a move, **undo** returns to the pre-move state
+  (skipping the AI so the table waits on the human), and **redo** restores it —
+  the recorder/player contract end-to-end.
+- **`responsive.spec.js`** (3) — at 1024×700 and 1280×720 the layout has no
+  overflow and the key elements stay in-viewport; plus an **artifacts** run that
+  saves setup + game-over screenshots for human review.

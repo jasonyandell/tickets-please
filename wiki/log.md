@@ -198,3 +198,34 @@ _(The TEST-bug fix + this log rewrite landed as commit `62fba9c`.)_
   simulation 5); `npm run test:e2e` → **3/3** green (`board.spec.js` ×2,
   `hotseat.spec.js` ×1). The contract play-throughs save `artifacts/board.png` /
   `board-claim.png`, opened to confirm the board really renders.
+
+### 2026-06-06 — Jam batches (1, 2, 4) + undo/redo + responsive (ingest + lint)
+Reconciled the wiki to everything shipped after the screen-router rebuild:
+- **Board readability (Batch 1 → 4).** A claimed route now carries an **owner
+  token** (a light disc ringed in the owner's color, bearing their initial).
+  Batch 1's flat ticket-route highlight was **superseded** by an always-on
+  **weighted ticket heat-map**: `viewModel.js:ticketRouteWeights` counts how many
+  of the active human's *incomplete* tickets shortest-path through each route
+  (owned = free connector, unclaimed = its length, opponent = impassable), and
+  `render.js:drawBox` glows those routes with a teal halo whose blur+opacity
+  scale with the weight — overlap reads as a hotter spot. Empty on AI turns, so
+  tickets never leak (same hotseat-privacy rule). Updated [[ui]], [[architecture]].
+- **Card legend dropped; WILD is a rainbow chip (Batch 2).** The card-color
+  legend left the panel (colors are self-evident on the cards), and the
+  wild/locomotive card renders as a distinctive multicolor **rainbow chip**
+  (`.card.wild` / `.pip.wild`), never a flat gray. Updated [[ui]].
+- **Undo/redo — recorder/player over the engine (`history.js`).** Documented the
+  **tape + playhead** model: an append-only action log; state is a pure *replay*
+  of the prefix through the engine reducer (no inverse-delta mutation, no
+  timers); undo rewinds past AI to the previous human decision point, redo
+  fast-forwards to the next, and a new action while rewound **branches**
+  (truncate at the cursor). Tied to [[determinism]] in [[ui]] + [[architecture]];
+  folded into [[ui]] rather than a standalone page (didn't earn one).
+- **Counts reconciled by running them.** `npm test` → **164/164** green
+  (scoring 13, rules 34, game 22, ai 8, layout 11, **viewModel 30**,
+  **history 9 (new)**, **contrast 32**, simulation 5); `npm run test:e2e` →
+  **7/7** green (`board.spec.js` ×2, `hotseat.spec.js` ×1, **`undo.spec.js` ×1**,
+  **`responsive.spec.js` ×3**). Routes/tickets on the [[map]] unchanged. Updated
+  [[testing]] (it had drifted to 115 / 3 and was missing the contrast + history
+  suites). Lint: no orphan pages, no dangling `[[links]]`, every page reachable
+  from [[index]].
