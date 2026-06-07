@@ -6,7 +6,7 @@ is verified through a **deterministic state contract** — never by sampling
 pixels. Unit tests use Node's built-in runner — **zero dependencies**:
 
 ```
-npm test           # node --test over tests/*.test.js   (205 tests)
+npm test           # node --test over tests/*.test.js   (199 tests)
 npm run test:e2e   # Playwright contract play-throughs   (13 tests, dev-only)
 npm run validate   # check the map against its invariants
 node tools/simulate.js [games] [seed]   # play full AI-vs-AI games
@@ -16,7 +16,7 @@ node tools/simulate.js [games] [seed]   # play full AI-vs-AI games
 > so the script globs `tests/*.test.js` explicitly (a shell glob, so CI on Node
 > 20 works too — see [[log]] 2026-05-30 deploy corrections).
 
-## Unit suites (205 tests total)
+## Unit suites (199 tests total)
 - **`scoring.test.js`** (13) — route points, ticket completion, longest path,
   `finalScores` incl. longest-path ties. See [[scoring]].
 - **`rules.test.js`** (34) — `canClaimRoute` (colored/gray/wild, trains, double
@@ -49,12 +49,10 @@ node tools/simulate.js [games] [seed]   # play full AI-vs-AI games
   (`createPopAnimator` start/retarget/cancel/settle; `createLoopAnimator`
   start/stop/idempotent) with NO real timers. The pattern is documented in [[ui]]
   ("How we test animations"). See [[ui]].
-- **`persist.test.js`** (12) — **save/restore** (`persist.js`): serialize →
+- **`persist.test.js`** (6) — **save/restore** (`persist.js`): serialize →
   deserialize round-trip of the recipe (seed + playerConfigs + action tape +
-  cursor), rejecting corrupt/foreign/old-version saves without throwing,
-  **restore-by-replay** rebuilding the exact position, and the pure
-  `autoReloadDue` policy (only inside the 5-min play window, at most once per 30s
-  interval). See [[ui]].
+  cursor), rejecting corrupt/foreign/old-version saves without throwing, and
+  **restore-by-replay** rebuilding the exact position. See [[ui]].
 - **`contrast.test.js`** (32) — a **WCAG AA contrast gate** over the design-token
   palette: parses the `:root` `--token: #hex` colors in `src/ui/style.css` and
   asserts every (text, background) pair the UI paints clears the AA threshold, so

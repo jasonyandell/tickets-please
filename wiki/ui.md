@@ -69,8 +69,7 @@ over `<section data-screen>` elements — one per screen
   recording every applied action onto its tape and binding Undo/Redo (buttons +
   Cmd/Ctrl+Z / Cmd/Ctrl+Shift+Z) to the recorder's playhead. It also persists the
   game after every applied action and restores it on boot (see *Persistence*),
-  exposes the **⟳ Reload** button (`doReload`), and owns the single auto-reload
-  `setInterval` that consults the pure `persist.autoReloadDue(...)` policy.
+  and exposes the **⟳ Reload** button (`doReload`).
 - `render.js` — draws the [[map]] onto the canvas (cities as **skyline icons** —
   a three-building glyph with a white halo + lit windows, sized to fill the space
   and balance the route boxes, far more legible than a flat dot — routes as
@@ -94,8 +93,7 @@ over `<section data-screen>` elements — one per screen
 - `persist.js` — **save/restore the game across a reload** (see *Persistence*
   below). Pure + dependency-injected: serializes the *recipe* (seed +
   playerConfigs + the recorded action tape + cursor), not engine state, and
-  restores by pure **replay** — the very same model as `history.js`. Also owns the
-  pure `autoReloadDue(...)` policy (clock injected; no `Date.now`/timers).
+  restores by pure **replay** — the very same model as `history.js`.
 - `history.js` — **undo/redo as a recorder/player over the engine** (see the
   *Undo/redo* section below). Pure: it owns an
   append-only action **tape** + a **cursor** and computes state by *replaying*
@@ -208,16 +206,6 @@ button (`doReload` → `location.reload()`) restores to this same point. **New G
 overwrites the save so a later reload restores the new game, not the old one. See
 [[deployment]] for the `_headers` cache policy that makes a reload pick up new code.
 
-### Chill auto-reload (Batch 11)
-A single isolated `setInterval` ticks every **30s** and asks the *pure*
-`persist.autoReloadDue({ now, lastPlayAt, lastReloadAt })` whether to reload. It
-fires only **within 5 min of the last applied move** (the "recently played"
-window) and at most once per interval, so the page picks up freshly-deployed code
-while you're playing but stops reloading once you walk away. Keeping the decision
-a pure clock-injected function (no `Date.now`/timers in the policy) makes it
-trivially unit-testable. **Disabled on the verification path** (`?test` /
-reduced-motion), so the e2e never waits on a timer.
-
 ## How we test animations (the anim.js recipe)
 `anim.js` establishes a flake-free pattern, mirrored by `tests/anim.test.js`:
 1. **A pure frame model.** All motion is a function of an `elapsed` number —
@@ -264,9 +252,8 @@ Pure unit tests are the primary gate (see [[testing]]):
   traveling-pulse maths: endpoints, peak, monotonic, clamp, wrap) and both rAF
   **drivers** under a fake clock (start/retarget/cancel/settle; loop start/stop),
   with no real timers.
-- `tests/persist.test.js` (12) — **serialize/deserialize** (recipe round-trip,
-  reject corrupt/foreign/old saves without throwing), **restore-by-replay**, and
-  the pure `autoReloadDue` policy (window + interval gating).
+- `tests/persist.test.js` (6) — **serialize/deserialize** (recipe round-trip,
+  reject corrupt/foreign/old saves without throwing) and **restore-by-replay**.
 
 Real-browser behaviour is proven by the **contract-based** e2e suite
 (`npm run test:e2e`, Playwright, dev-only) — it drives scripted play-throughs and

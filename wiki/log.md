@@ -270,3 +270,15 @@ Reconciled the wiki to everything shipped after the undo/redo + responsive batch
   [[map]] routes/tickets unchanged. **Lint:** no orphan pages, no dangling
   `[[links]]` (only the literal examples in [[CLAUDE]]), every page reachable
   from [[index]]; the prior CI-count drift in [[deployment]] (164) corrected to 205.
+
+### 2026-06-07 — Auto-reload removed (purify) · commit `cb8a183`
+The **chill auto-reload** (Batch 11) — the lone 30s `setInterval` consulting the
+pure `persist.autoReloadDue(...)` policy — was added then **removed**, returning
+`main.js`/`persist.js` to timer-free. What remains: persist/restore (seed +
+action-tape → pure replay), the manual **⟳ Reload** button, and the
+`dist/_headers` cache policy. Wiki reconciled — the auto-reload description struck
+from [[ui]] and [[deployment]]; only the historical Batch-11 entry above keeps the
+mention. **Counts re-run:** `npm test` → **199/199** (persist 12→**6** after the
+`autoReloadDue` tests went; all others unchanged); `npm run test:e2e` → **13/13**.
+**Lint:** no orphans, no dangling `[[links]]`, every page reachable from [[index]].
+→ [[ui]], [[deployment]], [[testing]].

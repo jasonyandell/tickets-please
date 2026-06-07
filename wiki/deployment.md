@@ -24,16 +24,13 @@ deployed code while the deterministic [[ui|save (seed + action tape)]] restores 
 exact game position. `tools/build.js` writes a `_headers` file:
 
 - `/` and `/index.html` → `Cache-Control: no-cache` — the HTML shell is always
-  revalidated, so a ⟳ Reload (manual or the chill auto-reload) gets the latest app.
+  revalidated, so a ⟳ Reload (manual) gets the latest app.
 - `/src/*` → `Cache-Control: public, max-age=300` — the ES modules cache for 5
   minutes (fast repeat loads), short enough that a deploy propagates promptly.
 
-This pairs with the in-app **chill auto-reload** ([[ui]]): within 5 min of a move
-the page reloads every ~30s, so an open tab quietly upgrades to a new deploy.
-
 ## CI/CD (`.github/workflows/deploy.yml`)
 On push to `main` (or manual `workflow_dispatch`):
-1. **test** job — `npm test` (205 tests) + `npm run validate` (map invariants).
+1. **test** job — `npm test` (199 tests) + `npm run validate` (map invariants).
 2. **deploy** job (`needs: test`) — `node tools/build.js`, then
    `cloudflare/wrangler-action@v3` publishes with repo secrets
    `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`.
