@@ -539,11 +539,11 @@ function roundRectPath(ctx, x, y, w, h, r) {
 // just below y so the cluster centers on the point). Colors come from --city-*
 // tokens. Returns the marker's right edge so the label can clear it.
 const CITY_BUILDINGS = [
-  [-7, 5, 9],
-  [-1, 6, 14],
-  [5, 5, 11],
+  [-14, 8, 15],
+  [-5, 10, 22],
+  [6, 8, 18],
 ];
-const CITY_BASELINE = 5; // baseline offset below the city point (px)
+const CITY_BASELINE = 8; // baseline offset below the city point (px)
 
 function drawCityIcon(ctx, x, y) {
   const base = y + CITY_BASELINE;
@@ -555,13 +555,13 @@ function drawCityIcon(ctx, x, y) {
   // so the dark buildings stay legible against the map's land tones.
   ctx.save();
   ctx.shadowColor = 'rgba(0,0,0,0.30)';
-  ctx.shadowBlur = 3;
+  ctx.shadowBlur = 4;
   ctx.shadowOffsetY = 1;
   ctx.strokeStyle = ring;
-  ctx.lineWidth = 3;
+  ctx.lineWidth = 4;
   ctx.lineJoin = 'round';
   ctx.beginPath();
-  for (const [dx, w, h] of CITY_BUILDINGS) roundRectPath(ctx, x + dx, base - h, w, h, 1.5);
+  for (const [dx, w, h] of CITY_BUILDINGS) roundRectPath(ctx, x + dx, base - h, w, h, 2);
   ctx.stroke();
   ctx.restore();
 
@@ -569,20 +569,20 @@ function drawCityIcon(ctx, x, y) {
   ctx.save();
   ctx.fillStyle = fill;
   ctx.beginPath();
-  for (const [dx, w, h] of CITY_BUILDINGS) roundRectPath(ctx, x + dx, base - h, w, h, 1.5);
+  for (const [dx, w, h] of CITY_BUILDINGS) roundRectPath(ctx, x + dx, base - h, w, h, 2);
   ctx.fill();
   ctx.restore();
 
   // Lit windows — a small grid of accent squares so the marker reads as a city.
   ctx.save();
   ctx.fillStyle = win;
-  const inset = 1.4;
-  const ww = 1.3;
-  const gap = 1.4;
+  const inset = 2;
+  const ww = 2;
+  const gap = 1.8;
   for (const [dx, w, h] of CITY_BUILDINGS) {
     const left = x + dx + inset;
     const right = x + dx + w - inset;
-    const cols = w >= 6 ? 2 : 1;
+    const cols = w >= 9 ? 2 : 1;
     for (let fy = base - h + inset + 0.6; fy + ww <= base - inset; fy += ww + gap) {
       for (let c = 0; c < cols; c++) {
         const wx = left + c * (ww + gap);
@@ -602,16 +602,16 @@ function drawCity(ctx, x, y, name) {
   const rightEdge = drawCityIcon(ctx, x, y);
 
   if (name) {
-    ctx.font = '600 12px system-ui, sans-serif';
+    ctx.font = '600 13px system-ui, sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     const label = String(name);
     const tw = ctx.measureText(label).width;
-    const plateX = rightEdge + 3;
+    const plateX = rightEdge + 5;
     // Rounded label plate for legibility against the map.
     ctx.save();
     ctx.beginPath();
-    roundRectPath(ctx, plateX, y - 9, tw + 8, 18, 4);
+    roundRectPath(ctx, plateX, y - 10, tw + 9, 20, 5);
     ctx.fillStyle = cssVar('--label-plate', '#ffffff');
     ctx.globalAlpha = 0.92;
     ctx.fill();
