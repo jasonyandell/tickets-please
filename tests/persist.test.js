@@ -20,7 +20,6 @@ import {
   saveTo,
   loadFrom,
   clearSave,
-  autoReloadDue,
 } from '../src/ui/persist.js';
 import { createRecorder } from '../src/ui/history.js';
 import { initGame } from '../src/engine/state.js';
@@ -192,69 +191,4 @@ test('the storage glue never throws on a hostile Storage', () => {
   assert.equal(saveTo(null, {}), false);
   assert.equal(loadFrom(null), null);
   assert.doesNotThrow(() => clearSave(null));
-});
-
-// ---------------------------------------------------------------------------
-// autoReloadDue — the pure, clock-injected auto-reload policy. No fake timers,
-// no waits: every case passes explicit timestamps. (Driver lives in main.js.)
-// ---------------------------------------------------------------------------
-
-test('autoReloadDue: in-window AND interval elapsed → true', () => {
-  // played 10s ago (inside the 5-min window), last reload 40s ago (>30s gap).
-  assert.equal(
-    autoReloadDue({ now: 100_000, lastPlayAt: 90_000, lastReloadAt: 60_000 }),
-    true,
-  );
-});
-
-test('autoReloadDue: past the 5-min window → false (player walked away)', () => {
-  // last play 6 min ago; even though the interval has elapsed, we stop.
-  assert.equal(
-    autoReloadDue({ now: 400_000, lastPlayAt: 400_000 - 360_000, lastReloadAt: 0 }),
-    false,
-  );
-});
-
-test('autoReloadDue: interval not elapsed → false', () => {
-  // played recently, but only 10s since the last reload (<30s).
-  assert.equal(
-    autoReloadDue({ now: 100_000, lastPlayAt: 95_000, lastReloadAt: 90_000 }),
-    false,
-  );
-});
-
-test('autoReloadDue: window boundary is inclusive, just past it is not', () => {
-  const windowMs = 300_000, intervalMs = 30_000, now = 1_000_000, lastReloadAt = 0;
-  // exactly at the window edge → still due
-  assert.equal(
-    autoReloadDue({ now, lastPlayAt: now - windowMs, lastReloadAt, intervalMs, windowMs }),
-    true,
-  );
-  // 1ms past the edge → not due
-  assert.equal(
-    autoReloadDue({ now, lastPlayAt: now - windowMs - 1, lastReloadAt, intervalMs, windowMs }),
-    false,
-  );
-});
-
-test('autoReloadDue: interval boundary is inclusive, just under it is not', () => {
-  const intervalMs = 30_000, now = 500_000, lastPlayAt = now - 1_000;
-  // exactly one interval since the last reload → due
-  assert.equal(
-    autoReloadDue({ now, lastPlayAt, lastReloadAt: now - intervalMs, intervalMs }),
-    true,
-  );
-  // 1ms short of the interval → not due
-  assert.equal(
-    autoReloadDue({ now, lastPlayAt, lastReloadAt: now - intervalMs + 1, intervalMs }),
-    false,
-  );
-});
-
-test('autoReloadDue: never played (null/NaN lastPlayAt) or bad now → false', () => {
-  assert.equal(autoReloadDue({ now: 100_000, lastPlayAt: null }), false);
-  assert.equal(autoReloadDue({ now: 100_000, lastPlayAt: NaN }), false);
-  assert.equal(autoReloadDue({ now: NaN, lastPlayAt: 100_000 }), false);
-  // first-ever tick after a fresh play (lastReloadAt defaults to 0) → due once
-  assert.equal(autoReloadDue({ now: 100_000, lastPlayAt: 95_000 }), true);
 });

@@ -53,7 +53,6 @@ import {
   saveTo,
   clearSave,
   restoreGame,
-  autoReloadDue,
 } from './persist.js';
 import { createRouter, setViewModel, setLastAction } from './app.js';
 import { renderMenu } from './screens/menu.js';
@@ -94,12 +93,7 @@ let G = {
   gameOver: false,
   winner: null,
   history: null,       // undo/redo recorder (recorder/player over the engine)
-  lastPlayAt: null,    // ms of the last applied move; drives the 5-min auto-reload window
 };
-
-// Auto-reload bookkeeping (the policy is pure; see persist.autoReloadDue). The
-// driver's ONE interval reads these + the real clock; tests never touch them.
-let lastReloadAt = 0;
 
 // ---------------------------------------------------------------------------
 // Map resolution
@@ -277,7 +271,6 @@ function safeApply(action, describe) {
   try {
     const next = applyAction(G.state, action, G.map);
     G.state = next;
-    G.lastPlayAt = nowMs();   // mark the play so the auto-reload window reopens
     if (describe) log(describe);
     // Record the applied action on the undo/redo tape (append, or branch if the
     // cursor was rewound). The acting player's AI-ness drives undo's "skip AI".
@@ -385,28 +378,6 @@ function tryRestore() {
     scheduleAIIfNeeded();      // saved mid-AI-turn? let the AI resume.
   }
   return true;
-}
-
-// Real wall clock, isolated so the rest of main.js stays clock-free. The pure
-// reload policy (persist.autoReloadDue) takes time as an argument, so only this
-// helper and the driver interval ever read the clock.
-function nowMs() {
-  try { return Date.now(); } catch (_) { return 0; }
-}
-
-// Auto-reload is disabled on the verification path (and for reduced-motion users)
-// so the e2e never couples to a timer. Any of these opts out:
-//   window.__NO_AUTORELOAD__ • ?test • prefers-reduced-motion: reduce
-function autoReloadDisabled() {
-  try {
-    if (window.__NO_AUTORELOAD__) return true;
-    const params = new URLSearchParams(location.search || '');
-    if (params.has('test')) return true;
-    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      return true;
-    }
-  } catch (_) { /* ignore */ }
-  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -963,24 +934,6 @@ function boot() {
   // Restore a saved game if one exists (replay its action tape); otherwise boot
   // to the landing menu. A corrupt/missing save falls through to the menu.
   if (!tryRestore()) router.show('menu');
-
-  // Chill auto-reload: ONE isolated interval ticks every 30s and asks the PURE
-  // policy (persist.autoReloadDue) whether to reload — true only within 5 min of
-  // the last applied move, so once the player walks away the page goes quiet.
-  // Opted out on the verification path (see autoReloadDisabled) so the e2e never
-  // waits on a timer. The save is always current, so a reload restores the exact
-  // position; the policy's interval guard means a tick that arrives early is a
-  // no-op rather than a double-reload.
-  if (!autoReloadDisabled()) {
-    setInterval(() => {
-      try {
-        if (autoReloadDue({ now: nowMs(), lastPlayAt: G.lastPlayAt, lastReloadAt })) {
-          lastReloadAt = nowMs();
-          location.reload();
-        }
-      } catch (_) { /* ignore */ }
-    }, 30_000);
-  }
 }
 
 if (typeof document !== 'undefined') {

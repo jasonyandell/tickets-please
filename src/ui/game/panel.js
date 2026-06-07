@@ -55,7 +55,7 @@ export function renderPanel(panel, ctx) {
     reason: canRedo ? null : 'Nothing to redo',
   }));
   // Reload restarts the page; the game is persisted, so boot restores this exact
-  // position. Always available — it's the manual twin of the auto-reload.
+  // position. Always available.
   history.appendChild(actionBtn('⟳ Reload', 'reload', () => { if (typeof onReload === 'function') onReload(); }));
   header.appendChild(history);
   panel.appendChild(header);

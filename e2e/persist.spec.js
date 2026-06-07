@@ -2,9 +2,7 @@
 //
 // The save is the recorded action tape, so a reload is a pure replay: after a
 // move (and the AI's reply), window.__APP__.viewModel must come back BYTE-FOR-BYTE
-// the same across page.reload(). No pixels are sampled. The 10s auto-reload is
-// disabled via window.__NO_AUTORELOAD__ (set in an init script that survives the
-// reload), so the suite never waits on a timer.
+// the same across page.reload(). No pixels are sampled.
 //
 //   1. start a fixed-seed game → claim a route → AI replies → reload → assert the
 //      view-model is identical.
@@ -81,12 +79,6 @@ async function claimRouteAndSettle(page) {
     return a && a.by === 1; // last recorded action was the AI's
   }).toBe(true);
 }
-
-// Disable the auto-reload timer for EVERY page load in this context (including
-// the reload), so the suite never couples to the 10s interval.
-test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => { window.__NO_AUTORELOAD__ = true; });
-});
 
 test('a game survives a page reload (same game, same point)', async ({ page }) => {
   const errors = attachErrorCollectors(page);

@@ -121,7 +121,7 @@ export function pulseIntensityAt(elapsed, pathLength, pointDist, opts = {}) {
 
 // True when animations should resolve instantly (final state, no frames):
 //   window.__INSTANT_ANIM__   — explicit test/opt-out flag
-//   ?test                     — the verification path (also disables auto-reload)
+//   ?test                     — the verification path
 //   prefers-reduced-motion    — the user asked for no motion
 // Import-safe: any access throwing (no window/matchMedia) falls back to false.
 export function isInstantMode() {

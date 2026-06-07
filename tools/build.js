@@ -40,7 +40,7 @@ writeFileSync(join(DIST, 'index.html'), rootHtml);
 writeFileSync(join(DIST, 'robots.txt'), 'User-agent: *\nAllow: /\n');
 
 // Cloudflare Pages/Workers `_headers`: cache policy for the persist+reload loop.
-// The HTML must REVALIDATE so the 10s auto-reload always picks up a fresh deploy;
+// The HTML must REVALIDATE so a manual ⟳ Reload always picks up a fresh deploy;
 // the app's JS/CSS may sit in the edge/browser cache so repeated reloads are
 // cheap. The asset window is deliberately short (5 min) because these paths are
 // unhashed — a deploy is fully live within that window, not pinned forever.
