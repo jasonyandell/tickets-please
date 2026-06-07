@@ -796,3 +796,14 @@ button.link {
   [data-screen="gameover"].active { padding: 16px; }
 }
 /* === end Wave C === */
+
+/* === city icons ===
+   Tokens for the canvas-drawn city skyline markers (render.js drawCityIcon).
+   The marker reuses --city-fill (building bodies) and --city-ring (white halo);
+   this adds the lit-window accent. Canvas can't resolve var(), so render.js
+   samples these off :root via getComputedStyle — keep them literal colors.
+   Append-only; do NOT fold into the action-bar / Undo / Reload CSS above. */
+:root {
+  --city-window: #e3b505;   /* lit windows on the city skyline marker */
+}
+/* === end city icons === */

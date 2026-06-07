@@ -273,6 +273,9 @@ export function drawMap(ctx, map, state, view, highlight) {
   // sampling pixels. This is the ONLY canvas check anywhere.
   if (ctx.canvas && width > 0 && height > 0) {
     ctx.canvas.dataset.painted = 'true';
+    // City count — a structured (non-pixel) smoke hook so e2e can assert the
+    // city icons were laid out and drawn, mirroring the layout's city list.
+    ctx.canvas.dataset.cities = String(layout.cities.length);
   }
 }
 
@@ -427,21 +430,74 @@ function roundRectPath(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-function drawCity(ctx, x, y, name) {
-  // City dot: a soft white halo with a dark core, sourced from --city-* tokens.
+// A small city skyline marker (three buildings of varied height with lit
+// windows), drawn as an inline-SVG-style glyph straight to canvas — zero-dep and
+// far more legible as "a city" than a flat dot. Buildings are [dx, w, h] in
+// canvas px relative to the city point (dx from center x, all sharing a baseline
+// just below y so the cluster centers on the point). Colors come from --city-*
+// tokens. Returns the marker's right edge so the label can clear it.
+const CITY_BUILDINGS = [
+  [-7, 5, 9],
+  [-1, 6, 14],
+  [5, 5, 11],
+];
+const CITY_BASELINE = 5; // baseline offset below the city point (px)
+
+function drawCityIcon(ctx, x, y) {
+  const base = y + CITY_BASELINE;
+  const fill = cssVar('--city-fill', '#2b2f2b');
+  const ring = cssVar('--city-ring', '#ffffff');
+  const win = cssVar('--city-window', '#e3b505');
+
+  // White halo/ring with a soft drop shadow: a rounded outline of the silhouette
+  // so the dark buildings stay legible against the map's land tones.
   ctx.save();
   ctx.shadowColor = 'rgba(0,0,0,0.30)';
   ctx.shadowBlur = 3;
   ctx.shadowOffsetY = 1;
+  ctx.strokeStyle = ring;
+  ctx.lineWidth = 3;
+  ctx.lineJoin = 'round';
   ctx.beginPath();
-  ctx.arc(x, y, 6.5, 0, Math.PI * 2);
-  ctx.fillStyle = cssVar('--city-ring', '#ffffff');
+  for (const [dx, w, h] of CITY_BUILDINGS) roundRectPath(ctx, x + dx, base - h, w, h, 1.5);
+  ctx.stroke();
+  ctx.restore();
+
+  // Building bodies.
+  ctx.save();
+  ctx.fillStyle = fill;
+  ctx.beginPath();
+  for (const [dx, w, h] of CITY_BUILDINGS) roundRectPath(ctx, x + dx, base - h, w, h, 1.5);
   ctx.fill();
   ctx.restore();
-  ctx.beginPath();
-  ctx.arc(x, y, 4, 0, Math.PI * 2);
-  ctx.fillStyle = cssVar('--city-fill', '#2b2f2b');
-  ctx.fill();
+
+  // Lit windows — a small grid of accent squares so the marker reads as a city.
+  ctx.save();
+  ctx.fillStyle = win;
+  const inset = 1.4;
+  const ww = 1.3;
+  const gap = 1.4;
+  for (const [dx, w, h] of CITY_BUILDINGS) {
+    const left = x + dx + inset;
+    const right = x + dx + w - inset;
+    const cols = w >= 6 ? 2 : 1;
+    for (let fy = base - h + inset + 0.6; fy + ww <= base - inset; fy += ww + gap) {
+      for (let c = 0; c < cols; c++) {
+        const wx = left + c * (ww + gap);
+        if (wx + ww <= right) ctx.fillRect(wx, fy, ww, ww);
+      }
+    }
+  }
+  ctx.restore();
+
+  // Rightmost building edge — where the label should start clearing.
+  let edge = -Infinity;
+  for (const [dx, w] of CITY_BUILDINGS) edge = Math.max(edge, dx + w);
+  return x + edge;
+}
+
+function drawCity(ctx, x, y, name) {
+  const rightEdge = drawCityIcon(ctx, x, y);
 
   if (name) {
     ctx.font = '600 12px system-ui, sans-serif';
@@ -449,16 +505,17 @@ function drawCity(ctx, x, y, name) {
     ctx.textBaseline = 'middle';
     const label = String(name);
     const tw = ctx.measureText(label).width;
+    const plateX = rightEdge + 3;
     // Rounded label plate for legibility against the map.
     ctx.save();
     ctx.beginPath();
-    roundRectPath(ctx, x + 8, y - 9, tw + 8, 18, 4);
+    roundRectPath(ctx, plateX, y - 9, tw + 8, 18, 4);
     ctx.fillStyle = cssVar('--label-plate', '#ffffff');
     ctx.globalAlpha = 0.92;
     ctx.fill();
     ctx.restore();
     ctx.fillStyle = cssVar('--ink', '#111');
-    ctx.fillText(label, x + 12, y + 1);
+    ctx.fillText(label, plateX + 4, y + 1);
   }
 }
 
