@@ -58,6 +58,9 @@ test('menu → setup → start → play a turn (contract, no pixels)', async ({ 
   await expect(page.locator('[data-screen="menu"]')).toBeVisible();
   await expect.poll(async () => (await appState(page)).screen).toBe('menu');
 
+  // 1a. The brand wordmark is present on the menu (appearance contract hook).
+  await expect(page.locator('[data-testid="wordmark"]')).toBeVisible();
+
   // 1b. How-to-play toggles open and teaches the rules (starting tickets, etc.).
   const how = page.locator('.menu-how');
   await expect(how).toBeHidden();
@@ -84,6 +87,9 @@ test('menu → setup → start → play a turn (contract, no pixels)', async ({ 
   await expect
     .poll(() => page.evaluate(() => document.querySelector('#map')?.dataset.painted))
     .toBe('true');
+
+  // 5a. The card-color legend is rendered in the panel (appearance contract).
+  await expect(page.locator('[data-testid="legend"]')).toBeVisible();
 
   // 5b. Starting-ticket selection: P1 (human) keeps the default set; the AI
   //     resolves its own choice on a timer, after which real play begins.

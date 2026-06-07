@@ -18,8 +18,8 @@
 //   - [data-testid="standings"] / [data-testid="rank-N"] — live ranking + leader
 //   - [data-testid="player-N"] / [data-testid="score-N"] — per-player blocks
 
-import { playerColor, cardColorCss } from '../render.js';
-import { WILD } from '../../engine/constants.js';
+import { playerColor, cardColorCss, cardInkCss } from '../render.js';
+import { WILD, TRAIN_COLORS, GRAY } from '../../engine/constants.js';
 
 /**
  * @param {HTMLElement} panel
@@ -101,6 +101,9 @@ export function renderPanel(panel, ctx) {
 
   // --- Standings: live ranking so the leader is always visible -----------
   panel.appendChild(buildStandings(vm.standings));
+
+  // --- Card-color legend: read the route/card palette at a glance --------
+  panel.appendChild(buildLegend());
 
   // --- Face-up row -------------------------------------------------------
   panel.appendChild(buildFaceUp(vm.faceUp, { human, mustDrawSecond: !!a.mustDrawSecond, onDrawFaceUp }));
@@ -260,6 +263,7 @@ function buildFaceUp(faceUp, { human, mustDrawSecond, onDrawFaceUp }) {
     const isWild = color === WILD;
     const c = el('div', 'card');
     c.style.background = cardColorCss(color);
+    c.style.color = cardInkCss(color);
     c.textContent = abbr(color);
     // A face-up wild may not be taken as the 2nd draw — make that legible.
     const lockedWild = human && mustDrawSecond && isWild;
@@ -276,6 +280,36 @@ function buildFaceUp(faceUp, { human, mustDrawSecond, onDrawFaceUp }) {
     row.appendChild(c);
   });
   if (shown === 0) row.appendChild(noteEl('(none)'));
+  wrap.appendChild(row);
+  return wrap;
+}
+
+// ---------------------------------------------------------------------------
+// Card-color legend — maps each train-card / route color to its name so the
+// board and hands are readable at a glance. Colors come from the same --card-*
+// tokens the canvas paints with (cardColorCss), so it can never drift.
+//
+// Contract hook: [data-testid="legend"] wraps the row; each chip carries
+// data-color so the e2e suite can read it structurally (no pixel sampling).
+// ---------------------------------------------------------------------------
+
+function buildLegend() {
+  const wrap = el('div', 'legend');
+  wrap.dataset.testid = 'legend';
+  wrap.appendChild(labelEl('Card colors'));
+  const row = el('div', 'legend-row');
+  const nameFor = (c) => (c === WILD ? 'wild' : c === GRAY ? 'any' : c);
+  [...TRAIN_COLORS, GRAY, WILD].forEach((c) => {
+    const item = el('span', 'legend-item');
+    item.dataset.color = String(c);
+    const chip = el('span', 'legend-chip');
+    chip.style.background = cardColorCss(c);
+    item.appendChild(chip);
+    const txt = document.createElement('span');
+    txt.textContent = nameFor(c);
+    item.appendChild(txt);
+    row.appendChild(item);
+  });
   wrap.appendChild(row);
   return wrap;
 }

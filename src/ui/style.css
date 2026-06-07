@@ -69,6 +69,30 @@
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.08);
   --shadow-md: 0 2px 10px rgba(0, 0, 0, 0.08);
   --shadow-lg: 0 4px 18px rgba(0, 0, 0, 0.3);
+
+  /* --- board / map ---
+     Painted on the <canvas>, which can't use var(); render.js samples these off
+     :root via getComputedStyle and falls back to the literal outside a browser. */
+  --map-land: #e7ecdf;       /* map base fill (vignette center) */
+  --map-land-edge: #dadfca;  /* map fill toward the edges */
+  --map-grid: #d2dbc9;       /* faint cartographic graticule */
+  --city-fill: #2b2f2b;      /* city dot */
+  --city-ring: #ffffff;      /* city dot halo / ring */
+  --label-plate: #ffffff;    /* city-name plate behind the label */
+
+  /* --- train-card palette ---
+     The single source for every card color: route fills (canvas), face-up card
+     chips, hand pips, and the legend. Each has a legible ink (see contrast test). */
+  --card-red: #c62f3b;
+  --card-orange: #cf6a14;
+  --card-yellow: #e3b505;
+  --card-green: #2a9d3a;
+  --card-blue: #2a6ad2;
+  --card-purple: #8e3fb0;
+  --card-white: #f4f4f4;
+  --card-black: #2b2b2b;
+  --card-gray: #c2c8cd;
+  --card-wild: #b9bdc2;
 }
 
 * { box-sizing: border-box; }
@@ -212,21 +236,52 @@ button.primary:hover { background: var(--accent-strong); }
 /* ---- face-up ---- */
 .faceup { margin-bottom: 12px; }
 .cardrow { display: flex; gap: 6px; flex-wrap: wrap; }
+/* A face-up train card: a rounded, shadowed chip color-coded to its card color
+   (set inline from --card-* tokens) with an adaptive ink for a legible count.
+   The inset highlights give it a glossy, physical card feel. */
 .card {
-  width: 34px;
-  height: 48px;
-  border-radius: 5px;
-  border: 1px solid rgba(0,0,0,0.4);
-  color: var(--on-accent);
+  width: 36px;
+  height: 50px;
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(0,0,0,0.28);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: 700;
-  text-shadow: 0 1px 2px rgba(0,0,0,0.5);
-  box-shadow: inset 0 0 0 2px rgba(255,255,255,0.2);
+  font-weight: 800;
+  font-size: var(--text-md);
+  box-shadow:
+    var(--shadow-sm),
+    inset 0 1px 0 rgba(255,255,255,0.45),
+    inset 0 -7px 12px rgba(0,0,0,0.14);
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
 }
 .card.clickable { cursor: pointer; }
-.card.clickable:hover { outline: 2px solid var(--ink); outline-offset: 1px; }
+.card.clickable:hover {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md), inset 0 1px 0 rgba(255,255,255,0.45);
+}
+
+/* ---- card-color legend ---- */
+.legend { margin-bottom: 12px; }
+.legend-row { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  text-transform: capitalize;
+}
+.legend-chip {
+  width: 18px;
+  height: 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(0,0,0,0.28);
+  box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255,255,255,0.4);
+  flex: 0 0 auto;
+}
 
 /* ---- standings (live ranking) ---- */
 .standings {
@@ -280,19 +335,37 @@ button.primary:hover { background: var(--accent-strong); }
 .hand {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
   margin: 4px 0;
 }
-.pipgrp { display: inline-flex; align-items: center; gap: 1px; }
+/* A hand color-group: a rounded, shadowed chip holding mini train-card pips of
+   one color plus a legible count. */
+.pipgrp {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 6px 2px 4px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: var(--shadow-sm);
+}
 .pip {
   display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  border: 1px solid rgba(0,0,0,0.35);
+  width: 11px;
+  height: 15px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(0,0,0,0.3);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.4);
 }
-.pipcount { font-size: var(--text-xs); color: var(--ink-muted); margin-left: 2px; }
-.pipmore { font-size: 10px; color: var(--ink-subtle); }
+.pipcount {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--ink);
+  margin-left: 3px;
+  font-variant-numeric: tabular-nums;
+}
+.pipmore { font-size: 10px; font-weight: 700; color: var(--ink-subtle); }
 
 .tickets { margin-top: 6px; }
 .tkrow { font-size: var(--text-sm); line-height: 1.5; }

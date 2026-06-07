@@ -23,29 +23,76 @@ import { setBoardRenderContext } from './game/board.js';
 // Player colors used both on the map (claimed routes) and the side panel.
 export const PLAYER_COLORS = ['#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4'];
 
-// Canonical TtR-ish card colors -> CSS. Unknown/locomotive fall back.
-const CARD_CSS = {
-  red: '#d23',
-  orange: '#e8821e',
-  yellow: '#e8c020',
-  green: '#2a9d3a',
-  blue: '#2a6ad2',
-  purple: '#8e3fb0',
-  pink: '#d24f9e',
-  black: '#2b2b2b',
-  white: '#f4f4f4',
-  gray: '#9aa0a6',
-  grey: '#9aa0a6',
-  wild: '#bdbdbd',
-  locomotive: '#bdbdbd',
-  rainbow: '#bdbdbd',
-  any: '#9aa0a6',
+// Read a CSS custom property off :root so canvas paint shares the same design
+// tokens the DOM uses via var(). The canvas can't resolve var(), so it samples
+// computed style. Falls back to the literal when there's no document (node
+// tests) or the token is undefined, keeping this module import-safe everywhere.
+function cssVar(name, fallback) {
+  try {
+    if (typeof document !== 'undefined' && document.documentElement) {
+      const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      if (v) return v;
+    }
+  } catch (_) { /* fall through to fallback */ }
+  return fallback;
+}
+
+// Canonical card color -> [token, fallback]. The --card-* token (declared in the
+// :root block of style.css) is the source of truth; the fallback keeps imports
+// working outside the browser. Unknown/locomotive resolve to gray.
+const CARD_TOKENS = {
+  red: ['--card-red', '#c62f3b'],
+  orange: ['--card-orange', '#cf6a14'],
+  yellow: ['--card-yellow', '#e3b505'],
+  green: ['--card-green', '#2a9d3a'],
+  blue: ['--card-blue', '#2a6ad2'],
+  purple: ['--card-purple', '#8e3fb0'],
+  white: ['--card-white', '#f4f4f4'],
+  black: ['--card-black', '#2b2b2b'],
+  gray: ['--card-gray', '#c2c8cd'],
+  grey: ['--card-gray', '#c2c8cd'],
+  wild: ['--card-wild', '#b9bdc2'],
+  locomotive: ['--card-wild', '#b9bdc2'],
+  rainbow: ['--card-wild', '#b9bdc2'],
+  any: ['--card-gray', '#c2c8cd'],
 };
 
 export function cardColorCss(color) {
-  if (color == null) return CARD_CSS.gray;
-  const k = String(color).toLowerCase();
-  return CARD_CSS[k] || CARD_CSS.gray;
+  const k = color == null ? 'gray' : String(color).toLowerCase();
+  const entry = CARD_TOKENS[k] || CARD_TOKENS.gray;
+  return cssVar(entry[0], entry[1]);
+}
+
+// --- color math (shared with tests/contrast.test.js) ----------------------
+function hexToRgb(hex) {
+  let h = String(hex).replace('#', '').trim();
+  if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+  const n = parseInt(h.slice(0, 6), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function relLuminance(hex) {
+  const [r, g, b] = hexToRgb(hex).map((v) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+function contrastRatio(fg, bg) {
+  const a = relLuminance(fg);
+  const b = relLuminance(bg);
+  const [hi, lo] = a > b ? [a, b] : [b, a];
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+// Pick a legible ink (dark or light) for text drawn ON a card chip, by WCAG
+// contrast against its background — so yellow/white/wild read dark and
+// red/blue/black read light. The chip backgrounds are guaranteed (by the
+// contrast test) to have a legible ink in this pair.
+export function cardInkCss(color) {
+  const bg = cardColorCss(color);
+  const dark = cssVar('--ink', '#1a1a1a');
+  const light = cssVar('--on-accent', '#ffffff');
+  return contrastRatio(light, bg) >= contrastRatio(dark, bg) ? light : dark;
 }
 
 export function playerColor(playerIndex) {
@@ -143,9 +190,8 @@ export function drawMap(ctx, map, state, view, highlight) {
   const { width, height } = view;
   ctx.clearRect(0, 0, width, height);
 
-  // Background.
-  ctx.fillStyle = '#eef3ee';
-  ctx.fillRect(0, 0, width, height);
+  // Map-like backdrop: a soft paper vignette + a faint graticule.
+  drawBoardBackground(ctx, width, height);
 
   const t = view.transform || fitTransform(map, width, height);
   const layout = view.layout || computeLayout(map);
@@ -173,7 +219,7 @@ export function drawMap(ctx, map, state, view, highlight) {
     } else {
       const col = routeColor(r);
       const isGray = col == null || /^(gray|grey|any|wild)$/i.test(String(col));
-      fill = isGray ? '#c2c8cd' : cardColorCss(col);
+      fill = isGray ? cardColorCss('gray') : cardColorCss(col);
     }
 
     for (const box of rl.boxes) {
@@ -235,26 +281,81 @@ function drawBox(ctx, box, t, fill, stroke, level) {
   }
 }
 
-function drawCity(ctx, x, y, name) {
+// Paint the board as a map: a radial paper vignette (lighter middle → darker
+// edges) overlaid with a faint graticule for cartographic texture. All colors
+// come from the --map-* tokens.
+function drawBoardBackground(ctx, width, height) {
+  const land = cssVar('--map-land', '#e7ecdf');
+  const edge = cssVar('--map-land-edge', '#dadfca');
+  let bg = land;
+  try {
+    const g = ctx.createRadialGradient(
+      width / 2, height * 0.42, Math.min(width, height) * 0.08,
+      width / 2, height / 2, Math.max(width, height) * 0.72,
+    );
+    g.addColorStop(0, land);
+    g.addColorStop(1, edge);
+    bg = g;
+  } catch (_) { /* createRadialGradient may be absent in a stub ctx */ }
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, width, height);
+
+  // Faint lat/long grid.
+  ctx.save();
+  ctx.strokeStyle = cssVar('--map-grid', '#d2dbc9');
+  ctx.lineWidth = 1;
+  ctx.globalAlpha = 0.55;
   ctx.beginPath();
-  ctx.arc(x, y, 6, 0, Math.PI * 2);
-  ctx.fillStyle = '#1a1a1a';
-  ctx.fill();
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = '#fff';
+  const step = 64;
+  for (let x = step; x < width; x += step) { ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, height); }
+  for (let y = step; y < height; y += step) { ctx.moveTo(0, y + 0.5); ctx.lineTo(width, y + 0.5); }
   ctx.stroke();
+  ctx.restore();
+}
+
+// Rounded-rect path helper (uses native roundRect where available).
+function roundRectPath(ctx, x, y, w, h, r) {
+  if (typeof ctx.roundRect === 'function') { ctx.roundRect(x, y, w, h, r); return; }
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function drawCity(ctx, x, y, name) {
+  // City dot: a soft white halo with a dark core, sourced from --city-* tokens.
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.30)';
+  ctx.shadowBlur = 3;
+  ctx.shadowOffsetY = 1;
+  ctx.beginPath();
+  ctx.arc(x, y, 6.5, 0, Math.PI * 2);
+  ctx.fillStyle = cssVar('--city-ring', '#ffffff');
+  ctx.fill();
+  ctx.restore();
+  ctx.beginPath();
+  ctx.arc(x, y, 4, 0, Math.PI * 2);
+  ctx.fillStyle = cssVar('--city-fill', '#2b2f2b');
+  ctx.fill();
 
   if (name) {
-    ctx.font = '12px system-ui, sans-serif';
+    ctx.font = '600 12px system-ui, sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     const label = String(name);
     const tw = ctx.measureText(label).width;
-    // label background for legibility
-    ctx.fillStyle = 'rgba(255,255,255,0.8)';
-    ctx.fillRect(x + 8, y - 8, tw + 4, 16);
-    ctx.fillStyle = '#111';
-    ctx.fillText(label, x + 10, y);
+    // Rounded label plate for legibility against the map.
+    ctx.save();
+    ctx.beginPath();
+    roundRectPath(ctx, x + 8, y - 9, tw + 8, 18, 4);
+    ctx.fillStyle = cssVar('--label-plate', '#ffffff');
+    ctx.globalAlpha = 0.92;
+    ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = cssVar('--ink', '#111');
+    ctx.fillText(label, x + 12, y + 1);
   }
 }
 

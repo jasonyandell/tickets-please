@@ -74,6 +74,17 @@ const PAIRS = [
   ['--warn-ink', '--warn-surface'],
   ['--warn-ink', '--badge-surface'],
   ['--on-overlay', '--surface-overlay'],
+  ['--ink', '--label-plate'],
+];
+
+// Train-card chips (face-up cards, hand pips, the legend) and route fills are
+// painted from --card-* tokens, with an ADAPTIVE ink chosen at runtime per chip
+// (render.js cardInkCss) — dark on light cards, light on dark. This asserts that
+// a legible ink EXISTS for every card token, so the runtime choice can always
+// clear AA no matter how the palette is retuned.
+const CARD_TOKENS = [
+  '--card-red', '--card-orange', '--card-yellow', '--card-green', '--card-blue',
+  '--card-purple', '--card-white', '--card-black', '--card-gray', '--card-wild',
 ];
 
 test('every declared color token exists for the audited pairs', () => {
@@ -90,6 +101,20 @@ for (const [fg, bg, opts] of PAIRS) {
     assert.ok(
       ratio >= min,
       `${fg} (${tokens[fg]}) on ${bg} (${tokens[bg]}) = ${ratio.toFixed(2)}:1, need ${min}:1`,
+    );
+  });
+}
+
+for (const card of CARD_TOKENS) {
+  test(`card chip ${card} has a legible ink (>= 4.5:1)`, () => {
+    assert.ok(tokens[card], `missing token ${card}`);
+    const best = Math.max(
+      contrast(tokens['--ink'], tokens[card]),
+      contrast(tokens['--on-accent'], tokens[card]),
+    );
+    assert.ok(
+      best >= 4.5,
+      `${card} (${tokens[card]}) best ink contrast = ${best.toFixed(2)}:1, need 4.5:1`,
     );
   });
 }
