@@ -88,10 +88,7 @@ test('menu → setup → start → play a turn (contract, no pixels)', async ({ 
     .poll(() => page.evaluate(() => document.querySelector('#map')?.dataset.painted))
     .toBe('true');
 
-  // 5a. The card-color legend is rendered in the panel (appearance contract).
-  await expect(page.locator('[data-testid="legend"]')).toBeVisible();
-
-  // 5b. Starting-ticket selection: P1 (human) keeps the default set; the AI
+  // 5a. Starting-ticket selection: P1 (human) keeps the default set; the AI
   //     resolves its own choice on a timer, after which real play begins.
   await resolveStartingTickets(page);
   await expect.poll(async () => (await appState(page)).viewModel.phase).toBe('play');

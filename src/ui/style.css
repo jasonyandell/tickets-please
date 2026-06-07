@@ -82,7 +82,7 @@
 
   /* --- train-card palette ---
      The single source for every card color: route fills (canvas), face-up card
-     chips, hand pips, and the legend. Each has a legible ink (see contrast test). */
+     chips, and hand pips. Each has a legible ink (see contrast test). */
   --card-red: #c62f3b;
   --card-orange: #cf6a14;
   --card-yellow: #e3b505;
@@ -281,24 +281,42 @@ button.primary:hover:not(:disabled) { background: linear-gradient(180deg, var(--
   box-shadow: var(--shadow-md), inset 0 1px 0 rgba(255,255,255,0.45);
 }
 
-/* ---- card-color legend ---- */
-.legend { margin-bottom: 12px; }
-.legend-row { display: flex; flex-wrap: wrap; gap: 4px 12px; }
-.legend-item {
+/* ---- wild / locomotive card ----
+   WILD is never a flat swatch: it's a multicolor gradient chip so it reads as
+   obviously special next to the single-color cards, both as a face-up card
+   (.card.wild) and as a hand pip (.pip.wild). The face-up wild's label rides on
+   a solid dark ink plate (--surface-overlay / --on-overlay, an AA-audited pair)
+   so it stays legible over the gradient. */
+.card.wild {
+  background: linear-gradient(135deg,
+    var(--card-red) 0%,
+    var(--card-orange) 18%,
+    var(--card-yellow) 36%,
+    var(--card-green) 54%,
+    var(--card-blue) 72%,
+    var(--card-purple) 100%);
+}
+.card-plate {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  font-size: var(--text-sm);
-  color: var(--ink-muted);
-  text-transform: capitalize;
-}
-.legend-chip {
-  width: 18px;
-  height: 12px;
+  justify-content: center;
+  min-width: 18px;
+  padding: 1px 4px;
   border-radius: var(--radius-sm);
-  border: 1px solid rgba(0,0,0,0.28);
-  box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255,255,255,0.4);
-  flex: 0 0 auto;
+  background: var(--surface-overlay);
+  color: var(--on-overlay);
+  font-size: var(--text-md);
+  font-weight: 800;
+  box-shadow: var(--shadow-sm);
+}
+.pip.wild {
+  background: linear-gradient(135deg,
+    var(--card-red) 0%,
+    var(--card-orange) 20%,
+    var(--card-yellow) 40%,
+    var(--card-green) 60%,
+    var(--card-blue) 80%,
+    var(--card-purple) 100%);
 }
 
 /* ---- standings (live ranking) ---- */

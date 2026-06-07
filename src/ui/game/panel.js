@@ -19,7 +19,7 @@
 //   - [data-testid="player-N"] / [data-testid="score-N"] — per-player blocks
 
 import { playerColor, cardColorCss, cardInkCss } from '../render.js';
-import { WILD, TRAIN_COLORS, GRAY } from '../../engine/constants.js';
+import { WILD } from '../../engine/constants.js';
 
 /**
  * @param {HTMLElement} panel
@@ -101,9 +101,6 @@ export function renderPanel(panel, ctx) {
 
   // --- Standings: live ranking so the leader is always visible -----------
   panel.appendChild(buildStandings(vm.standings));
-
-  // --- Card-color legend: read the route/card palette at a glance --------
-  panel.appendChild(buildLegend());
 
   // --- Face-up row -------------------------------------------------------
   panel.appendChild(buildFaceUp(vm.faceUp, { human, mustDrawSecond: !!a.mustDrawSecond, onDrawFaceUp }));
@@ -260,11 +257,21 @@ function buildFaceUp(faceUp, { human, mustDrawSecond, onDrawFaceUp }) {
     if (card == null) return; // empty slot
     shown++;
     const color = cardColorOf(card);
-    const isWild = color === WILD;
+    const isWild = isWildColor(color);
     const c = el('div', 'card');
-    c.style.background = cardColorCss(color);
-    c.style.color = cardInkCss(color);
-    c.textContent = abbr(color);
+    if (isWild) {
+      // WILD reads as obviously special: a multicolor gradient chip (.card.wild,
+      // styled in style.css) instead of a flat swatch. The label sits on a solid
+      // ink plate so it stays legible (AA) over the gradient.
+      c.classList.add('wild');
+      const plate = el('span', 'card-plate');
+      plate.textContent = wildGlyph();
+      c.appendChild(plate);
+    } else {
+      c.style.background = cardColorCss(color);
+      c.style.color = cardInkCss(color);
+      c.textContent = abbr(color);
+    }
     // A face-up wild may not be taken as the 2nd draw — make that legible.
     const lockedWild = human && mustDrawSecond && isWild;
     if (human && !lockedWild) {
@@ -280,36 +287,6 @@ function buildFaceUp(faceUp, { human, mustDrawSecond, onDrawFaceUp }) {
     row.appendChild(c);
   });
   if (shown === 0) row.appendChild(noteEl('(none)'));
-  wrap.appendChild(row);
-  return wrap;
-}
-
-// ---------------------------------------------------------------------------
-// Card-color legend — maps each train-card / route color to its name so the
-// board and hands are readable at a glance. Colors come from the same --card-*
-// tokens the canvas paints with (cardColorCss), so it can never drift.
-//
-// Contract hook: [data-testid="legend"] wraps the row; each chip carries
-// data-color so the e2e suite can read it structurally (no pixel sampling).
-// ---------------------------------------------------------------------------
-
-function buildLegend() {
-  const wrap = el('div', 'legend');
-  wrap.dataset.testid = 'legend';
-  wrap.appendChild(labelEl('Card colors'));
-  const row = el('div', 'legend-row');
-  const nameFor = (c) => (c === WILD ? 'wild' : c === GRAY ? 'any' : c);
-  [...TRAIN_COLORS, GRAY, WILD].forEach((c) => {
-    const item = el('span', 'legend-item');
-    item.dataset.color = String(c);
-    const chip = el('span', 'legend-chip');
-    chip.style.background = cardColorCss(c);
-    item.appendChild(chip);
-    const txt = document.createElement('span');
-    txt.textContent = nameFor(c);
-    item.appendChild(txt);
-    row.appendChild(item);
-  });
   wrap.appendChild(row);
   return wrap;
 }
@@ -510,13 +487,26 @@ function pipGroup(color, count) {
 }
 function pip(color) {
   const span = el('span', 'pip');
-  span.style.background = cardColorCss(color);
-  span.title = String(color);
+  if (isWildColor(color)) {
+    // WILD hand pips get the same multicolor gradient as the face-up wild chip
+    // (.pip.wild in style.css) so they never read as a flat gray card.
+    span.classList.add('wild');
+    span.title = 'wild';
+  } else {
+    span.style.background = cardColorCss(color);
+    span.title = String(color);
+  }
   return span;
 }
 function cardColorOf(card) {
   if (typeof card === 'string') return card;
   return (card && (card.color ?? card.kind)) || 'gray';
+}
+function isWildColor(color) {
+  return color === WILD || /^(wild|rainbow|locomotive)$/i.test(String(color));
+}
+function wildGlyph() {
+  return '★';
 }
 function abbr(color) {
   const c = String(color);
