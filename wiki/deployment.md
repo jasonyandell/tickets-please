@@ -19,7 +19,7 @@ build assembles a servable tree:
 
 ## CI/CD (`.github/workflows/deploy.yml`)
 On push to `main` (or manual `workflow_dispatch`):
-1. **test** job — `npm test` (87 tests) + `npm run validate` (map invariants).
+1. **test** job — `npm test` (164 tests) + `npm run validate` (map invariants).
 2. **deploy** job (`needs: test`) — `node tools/build.js`, then
    `cloudflare/wrangler-action@v3` publishes with repo secrets
    `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`.
