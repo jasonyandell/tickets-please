@@ -175,11 +175,22 @@ button {
   border-radius: var(--radius-md);
   background: var(--surface-raised);
   cursor: pointer;
+  /* Game-like feel: a soft top-light + subtle lift, and a press that travels. */
+  box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  transition: transform 0.06s ease, box-shadow 0.1s ease, background 0.1s ease;
 }
 button:hover:not(:disabled) { background: var(--surface-sunken); }
-button:disabled { opacity: 0.45; cursor: not-allowed; }
-button.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
-button.primary:hover { background: var(--accent-strong); }
+button:active:not(:disabled) { transform: translateY(1px); box-shadow: var(--shadow-sm); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+button.primary {
+  background: linear-gradient(180deg, var(--accent) 0%, var(--accent-strong) 100%);
+  color: var(--on-accent);
+  border-color: var(--accent-strong);
+  box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  font-weight: 600;
+}
+button.primary:hover:not(:disabled) { background: linear-gradient(180deg, var(--accent-strong) 0%, var(--accent-strong) 100%); }
 
 .toggles {
   display: flex;
@@ -648,3 +659,113 @@ button.link {
 .passdevice-sub { margin: 0; font-size: 18px; font-weight: 600; }
 .passdevice-note { margin: 0; font-size: var(--text-base); color: var(--ink-muted); }
 /* === end === */
+
+/* ============================================================
+   Appearance Wave C — cohesive screen polish.
+   CSS-only (no markup contracts changed). Reuses Wave-A tokens;
+   every text/bg pair here is already gated by tests/contrast.test.js.
+   ============================================================ */
+
+/* --- Screen cards: a sectioned header band above the body. ----------------
+   The menu/setup/game-over cards read as panels: an accent-ruled title sits
+   over the controls below it. */
+.menu-card, .setup-card, .over-card { position: relative; overflow: hidden; }
+.menu-title, .setup-title, .over-title {
+  padding-bottom: var(--space-5);
+  border-bottom: 2px solid var(--divider);
+}
+.setup-title, .over-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+.setup-title::before, .over-title::before {
+  content: '';
+  width: 6px;
+  align-self: stretch;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--accent) 0%, var(--accent-strong) 100%);
+}
+
+/* --- In-game section headers: each panel section gets an accent tick so the
+   HUD reads as discrete, labelled blocks rather than one long column. ------- */
+#panel .label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+#panel .label::before {
+  content: '';
+  width: 3px;
+  height: 0.85em;
+  border-radius: 999px;
+  background: var(--accent);
+  flex: 0 0 auto;
+}
+
+/* --- Prominent turn banner: the in-game "whose turn / what next" card is the
+   single most important readout, so make it stand out. --------------------- */
+#panel .banner {
+  padding: 10px 12px;
+  border-width: 2px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+#panel .banner .turnline {
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--ink);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: var(--space-3);
+}
+#panel .banner .promptline { font-size: var(--text-md); font-weight: 600; }
+
+/* --- CSS-only winner celebration on game-over. --------------------------- */
+/* A gentle pop-in on the headline + a slow gold shimmer sweeping the winner
+   row. Pure CSS keyframes — no JS animation loop. Respects reduced-motion. */
+.over-title { animation: overTitlePop 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) both; }
+.over-winner {
+  font-weight: 700;
+  color: var(--warn-ink);
+  animation: winnerPop 0.6s 0.15s cubic-bezier(0.2, 1.5, 0.35, 1) both;
+}
+.over-table tr.winner {
+  position: relative;
+  background:
+    linear-gradient(100deg,
+      var(--warn-surface) 0%, var(--warn-surface) 35%,
+      rgba(255, 255, 255, 0.85) 50%,
+      var(--warn-surface) 65%, var(--warn-surface) 100%);
+  background-size: 250% 100%;
+  animation: winnerShimmer 2.6s ease-in-out 0.4s infinite;
+}
+@keyframes overTitlePop {
+  0% { opacity: 0; transform: translateY(6px) scale(0.96); }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes winnerPop {
+  0% { opacity: 0; transform: scale(0.8); }
+  60% { transform: scale(1.06); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes winnerShimmer {
+  0%, 100% { background-position: 120% 0; }
+  50% { background-position: -20% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .over-title, .over-winner, .over-table tr.winner,
+  .banner .final-round { animation: none; }
+  .over-table tr.winner { background: var(--warn-surface); }
+}
+
+/* --- Responsive: keep every screen clip-free at small desktop sizes. ------
+   The 320px panel is generous on a 1024-wide board; trim it a touch and let
+   the cards breathe a little less so nothing overflows at 1024×700. */
+@media (max-width: 1100px) {
+  #panel { flex-basis: 288px; width: 288px; padding: var(--space-4); }
+  [data-screen="menu"].active,
+  [data-screen="setup"].active,
+  [data-screen="gameover"].active { padding: 16px; }
+}
+/* === end Wave C === */

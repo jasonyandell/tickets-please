@@ -67,6 +67,9 @@ const PAIRS = [
   ['--accent', '--surface-panel'],
   ['--accent', '--surface-raised'],
   ['--on-accent', '--accent'],
+  // Primary buttons fill with an accent→accent-strong gradient (Wave C), so the
+  // white label must clear AA against the darker bottom stop too.
+  ['--on-accent', '--accent-strong'],
   ['--on-accent', '--danger'],
   ['--ok', '--surface-raised'],
   ['--danger', '--surface-raised'],

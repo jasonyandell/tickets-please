@@ -93,14 +93,16 @@ function scoreTable(rows, winnerIndex) {
   return table;
 }
 
-// The winner / tie summary line (the h1 already says "Game over").
+// The winner / tie summary line (the h1 already says "Game over"). The leading
+// emoji is decorative; it pairs with the CSS-only celebration (the headline
+// pop-in + the gold shimmer on the winner row) defined in style.css.
 function winnerText(rows, winnerIndex) {
   if (winnerIndex == null || rows.length === 0) return 'Game over';
   const win = rows.find((r) => r.index === winnerIndex);
   if (!win) return 'Game over';
   const tied = rows.filter((r) => r.total === win.total).length > 1;
-  if (tied) return `Tie at ${win.total} pts`;
-  return `${win.name} wins — ${win.total} pts`;
+  if (tied) return `🤝 Tie at ${win.total} pts`;
+  return `🎉 ${win.name} wins — ${win.total} pts`;
 }
 
 // ---------------------------------------------------------------------------
