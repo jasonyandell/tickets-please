@@ -47,6 +47,13 @@ import {
 
 import { buildViewModel } from './viewModel.js';
 import { createRecorder } from './history.js';
+import {
+  serializeGame,
+  loadFrom,
+  saveTo,
+  clearSave,
+  restoreGame,
+} from './persist.js';
 import { createRouter, setViewModel, setLastAction } from './app.js';
 import { renderMenu } from './screens/menu.js';
 import { renderSetup } from './screens/setup.js';
@@ -77,6 +84,7 @@ let router = null;
 let G = {
   map: null,
   state: null,
+  seed: null,          // game seed (the save's recipe is seed + recorded actions)
   layout: null,
   transform: null,
   playerConfigs: [],   // [{ name, isAI }]
@@ -267,6 +275,9 @@ function safeApply(action, describe) {
     // Record the applied action on the undo/redo tape (append, or branch if the
     // cursor was rewound). The acting player's AI-ness drives undo's "skip AI".
     if (G.history) G.history.record(action, { by, isAI: playerIsAI(by) });
+    // Persist after every applied action so a reload always lands on the latest
+    // position (the save is just the tape, so this is cheap).
+    saveGame();
     // Observable State Contract: expose the action that was just applied.
     if (action && action.type) setLastAction({ ...action, by });
     return true;
@@ -279,6 +290,109 @@ function safeApply(action, describe) {
 function log(line) {
   G.logLines.push(line);
   if (G.logLines.length > 200) G.logLines.shift();
+}
+
+// ---------------------------------------------------------------------------
+// Persistence — keep the game across a reload.
+//
+// The save is the recipe, not a snapshot: seed + playerConfigs + the recorded
+// action tape (the undo/redo recorder's log). Restore is a pure replay. We save
+// on every applied action, so the save is always current; corrupt/missing →
+// fresh game, never a crash. (See persist.js for the pure serialize/restore.)
+// ---------------------------------------------------------------------------
+
+function storage() {
+  try {
+    return (typeof localStorage !== 'undefined') ? localStorage : null;
+  } catch (_) {
+    return null; // private mode can throw on access
+  }
+}
+
+// Snapshot the live game to localStorage. Cheap (no state, just the tape) so it
+// runs after every action. A no-op until a game with a recorder exists.
+function saveGame() {
+  if (!G.history || G.seed == null) return;
+  try {
+    saveTo(storage(), serializeGame({
+      seed: G.seed,
+      playerConfigs: G.playerConfigs,
+      entries: G.history.getEntries(),
+      cursor: G.history.getCursor(),
+    }));
+  } catch (_) { /* never let a save failure break play */ }
+}
+
+// On boot, rebuild a saved game by replaying its action tape. Returns true if a
+// game was restored (and the game screen shown); false → caller boots to menu.
+function tryRestore() {
+  const save = loadFrom(storage());
+  if (!save) return false;
+  const map = resolveMap();
+  if (!map) return false;
+  const tickets = resolveTickets(map);
+
+  let restored;
+  try {
+    restored = restoreGame(save, {
+      map,
+      createRecorder,
+      makeInitialState: (s) => initGame({
+        map,
+        tickets,
+        playerConfigs: s.playerConfigs,
+        seed: s.seed,
+        startingTicketChoice: true,
+      }),
+    });
+  } catch (err) {
+    // A save that no longer replays cleanly (e.g. a rules change) → discard it
+    // and start fresh rather than wedging the boot.
+    log(`Could not restore saved game: ${err && err.message ? err.message : err}`);
+    clearSave(storage());
+    return false;
+  }
+
+  G = {
+    ...G,
+    map,
+    state: restored.state,
+    seed: save.seed,
+    playerConfigs: save.playerConfigs,
+    layout: computeLayout(map),
+    logLines: ['Restored your game from this device.'],
+    gameOver: false,
+    winner: null,
+    scores: null,
+    history: restored.history,
+  };
+
+  // Show the game screen first so the canvas has a real layout box, then paint.
+  if (router) router.show('game');
+  resize();
+  refresh();
+
+  if (isGameOver(G.state)) {
+    endGame();                 // a finished game restores straight to the scoreboard
+  } else {
+    scheduleAIIfNeeded();      // saved mid-AI-turn? let the AI resume.
+  }
+  return true;
+}
+
+// Auto-reload is disabled on the verification path (and for reduced-motion users)
+// so the e2e never couples to a 10s timer. Any of these opts out:
+//   window.__NO_AUTORELOAD__ • ?test • prefers-reduced-motion: reduce
+function autoReloadDisabled() {
+  try {
+    if (window.__NO_AUTORELOAD__) return true;
+    const params = new URLSearchParams(location.search || '');
+    if (params.has('test')) return true;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      return true;
+    }
+  } catch (_) { /* ignore */ }
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -542,6 +656,12 @@ function doRedo() {
   gotoReplay(s);
 }
 
+// Manual reload — the save is always current, so boot restores us to this exact
+// position. Proves the persist path with a single click (next to Undo/Redo).
+function doReload() {
+  try { location.reload(); } catch (_) { /* non-browser */ }
+}
+
 // ---------------------------------------------------------------------------
 // Game lifecycle
 // ---------------------------------------------------------------------------
@@ -587,6 +707,7 @@ function newGame(numPlayers, configs, seed) {
     ...G,
     map,
     state,
+    seed: gameSeed,
     playerConfigs,
     layout: computeLayout(map),
     logLines: [`New game: ${numPlayers} players (seed ${gameSeed}).`],
@@ -597,6 +718,9 @@ function newGame(numPlayers, configs, seed) {
     // fully determine every later position by pure replay.
     history: createRecorder({ initialState: state, map }),
   };
+  // Overwrite any prior save so "New Game" replaces the persisted game — a reload
+  // now restores THIS game, not the one we just left.
+  saveGame();
   resize();
   refresh();
   scheduleAIIfNeeded();
@@ -715,6 +839,7 @@ function buildPanelCtx(viewModel) {
     onPass: doPass,
     onUndo: doUndo,
     onRedo: doRedo,
+    onReload: doReload,
     canUndo: !!(G.history && G.history.canUndo()),
     canRedo: !!(G.history && G.history.canRedo()),
     onMenu: goToMenu,
@@ -821,8 +946,18 @@ function boot() {
     if (ev.shiftKey) doRedo(); else doUndo();
   });
 
-  // Boot to the landing menu.
-  router.show('menu');
+  // Restore a saved game if one exists (replay its action tape); otherwise boot
+  // to the landing menu. A corrupt/missing save falls through to the menu.
+  if (!tryRestore()) router.show('menu');
+
+  // Auto-reload every 10s: ONE isolated interval, never cleared, opted out on the
+  // verification path (see autoReloadDisabled). The save is always current, so a
+  // reload restores the exact position — the only visible cost is a possible
+  // mid-decision flicker (a later guard could pause the timer while a human is
+  // mid-input; keeping it dead simple for now).
+  if (!autoReloadDisabled()) {
+    setInterval(() => { try { location.reload(); } catch (_) { /* ignore */ } }, 10_000);
+  }
 }
 
 if (typeof document !== 'undefined') {

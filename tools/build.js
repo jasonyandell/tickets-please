@@ -39,4 +39,22 @@ writeFileSync(join(DIST, 'index.html'), rootHtml);
 // A tiny 200/health file is handy and harmless.
 writeFileSync(join(DIST, 'robots.txt'), 'User-agent: *\nAllow: /\n');
 
+// Cloudflare Pages/Workers `_headers`: cache policy for the persist+reload loop.
+// The HTML must REVALIDATE so the 10s auto-reload always picks up a fresh deploy;
+// the app's JS/CSS may sit in the edge/browser cache so repeated reloads are
+// cheap. The asset window is deliberately short (5 min) because these paths are
+// unhashed — a deploy is fully live within that window, not pinned forever.
+writeFileSync(
+  join(DIST, '_headers'),
+  [
+    '/',
+    '  Cache-Control: no-cache',
+    '/index.html',
+    '  Cache-Control: no-cache',
+    '/src/*',
+    '  Cache-Control: public, max-age=300',
+    '',
+  ].join('\n'),
+);
+
 console.log('built dist/ (index.html + src/) — ready for `wrangler deploy`');

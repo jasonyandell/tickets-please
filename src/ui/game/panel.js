@@ -31,7 +31,7 @@ export function renderPanel(panel, ctx) {
     viewModel, gameOver,
     pendingTickets, state, ticketById, ticketLabel,
     onDrawDeck, onDrawFaceUp, onDrawTickets, onKeepTickets, onPass, onMenu,
-    onUndo, onRedo, canUndo, canRedo,
+    onUndo, onRedo, onReload, canUndo, canRedo,
   } = ctx;
 
   panel.innerHTML = '';
@@ -54,6 +54,9 @@ export function renderPanel(panel, ctx) {
     disabled: !canRedo,
     reason: canRedo ? null : 'Nothing to redo',
   }));
+  // Reload restarts the page; the game is persisted, so boot restores this exact
+  // position. Always available — it's the manual twin of the auto-reload.
+  history.appendChild(actionBtn('⟳ Reload', 'reload', () => { if (typeof onReload === 'function') onReload(); }));
   header.appendChild(history);
   panel.appendChild(header);
 
