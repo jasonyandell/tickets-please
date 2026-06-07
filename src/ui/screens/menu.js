@@ -14,9 +14,14 @@ export function renderMenu(container, { onPlay }) {
   const card = document.createElement('div');
   card.className = 'menu-card';
 
+  // Wordmark: the styled brand lockup. The emoji is decorative (aria-hidden);
+  // the accessible/test name is the plain word, exposed via [data-testid].
   const title = document.createElement('h1');
-  title.className = 'menu-title';
-  title.textContent = 'tickets-please 🚂';
+  title.className = 'menu-title wordmark';
+  title.dataset.testid = 'wordmark';
+  title.innerHTML =
+    '<span class="wordmark-mark" aria-hidden="true">🚂</span>' +
+    '<span class="wordmark-text">tickets<span class="wordmark-sep">·</span>please</span>';
   card.appendChild(title);
 
   const tagline = document.createElement('p');
