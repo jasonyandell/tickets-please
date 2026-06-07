@@ -505,8 +505,10 @@ button.link {
 .over-scores { display: flex; flex-direction: column; gap: 2px; font-variant-numeric: tabular-nums; }
 
 /* in-game panel header */
-.panel-header { display: flex; justify-content: flex-end; margin-bottom: 8px; }
+.panel-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
 .menu-exit { font-size: 12px; padding: 4px 8px; }
+.history-controls { display: flex; gap: 6px; }
+.history-controls button { font-size: 12px; padding: 4px 8px; }
 
 @media (max-width: 720px) {
   [data-screen="game"].active { flex-direction: column; }

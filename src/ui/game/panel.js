@@ -31,16 +31,30 @@ export function renderPanel(panel, ctx) {
     viewModel, gameOver,
     pendingTickets, state, ticketById, ticketLabel,
     onDrawDeck, onDrawFaceUp, onDrawTickets, onKeepTickets, onPass, onMenu,
+    onUndo, onRedo, canUndo, canRedo,
   } = ctx;
 
   panel.innerHTML = '';
 
-  // --- Header: Menu exit -------------------------------------------------
+  // --- Header: Menu exit + Undo/Redo time controls -----------------------
   const header = el('div', 'panel-header');
   const menuBtn = button('☰ Menu', onMenu);
   menuBtn.dataset.action = 'menu';
   menuBtn.classList.add('menu-exit');
   header.appendChild(menuBtn);
+  // Undo/redo are a recorder/player over the engine: rewind to your previous
+  // decision (skipping AI moves) or fast-forward again. Disabled-with-reason at
+  // the ends of the tape.
+  const history = el('div', 'history-controls');
+  history.appendChild(actionBtn('↶ Undo', 'undo', () => { if (typeof onUndo === 'function') onUndo(); }, {
+    disabled: !canUndo,
+    reason: canUndo ? null : 'Nothing to undo',
+  }));
+  history.appendChild(actionBtn('↷ Redo', 'redo', () => { if (typeof onRedo === 'function') onRedo(); }, {
+    disabled: !canRedo,
+    reason: canRedo ? null : 'Nothing to redo',
+  }));
+  header.appendChild(history);
   panel.appendChild(header);
 
   const vm = viewModel;

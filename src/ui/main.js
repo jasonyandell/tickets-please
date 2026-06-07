@@ -46,6 +46,7 @@ import {
 } from './render.js';
 
 import { buildViewModel } from './viewModel.js';
+import { createRecorder } from './history.js';
 import { createRouter, setViewModel, setLastAction } from './app.js';
 import { renderMenu } from './screens/menu.js';
 import { renderSetup } from './screens/setup.js';
@@ -83,6 +84,7 @@ let G = {
   aiTimer: null,
   gameOver: false,
   winner: null,
+  history: null,       // undo/redo recorder (recorder/player over the engine)
 };
 
 // ---------------------------------------------------------------------------
@@ -262,6 +264,9 @@ function safeApply(action, describe) {
     const next = applyAction(G.state, action, G.map);
     G.state = next;
     if (describe) log(describe);
+    // Record the applied action on the undo/redo tape (append, or branch if the
+    // cursor was rewound). The acting player's AI-ness drives undo's "skip AI".
+    if (G.history) G.history.record(action, { by, isAI: playerIsAI(by) });
     // Observable State Contract: expose the action that was just applied.
     if (action && action.type) setLastAction({ ...action, by });
     return true;
@@ -496,6 +501,48 @@ function doPass() {
 }
 
 // ---------------------------------------------------------------------------
+// Undo / Redo — move the recorder's playhead and re-render the replayed state.
+//
+// We NEVER mutate state to undo: we ask the recorder for the state at the new
+// cursor (a pure replay of the action prefix) and adopt it. Crucially the AI is
+// NOT re-scheduled — undo lands on a human decision point and the table pauses
+// for input; redo replays the already-recorded AI moves, so nothing runs on a
+// timer here.
+// ---------------------------------------------------------------------------
+
+function gotoReplay(s) {
+  clearTimeout(G.aiTimer);
+  hidePassDevice();
+  G.state = s;
+  if (isGameOver(s)) {
+    // Redo can reach the recorded end-of-game; present the scoreboard.
+    endGame();
+    return;
+  }
+  // Landing on a live (human) decision point — clear any stale game-over flags.
+  G.gameOver = false;
+  G.winner = null;
+  G.scores = null;
+  refresh();
+}
+
+function doUndo() {
+  if (!G.history || !G.history.canUndo()) return;
+  const s = G.history.undo();
+  if (s == null) return;
+  log('↶ Undo — back to your previous decision.');
+  gotoReplay(s);
+}
+
+function doRedo() {
+  if (!G.history || !G.history.canRedo()) return;
+  const s = G.history.redo();
+  if (s == null) return;
+  log('↷ Redo.');
+  gotoReplay(s);
+}
+
+// ---------------------------------------------------------------------------
 // Game lifecycle
 // ---------------------------------------------------------------------------
 
@@ -546,6 +593,9 @@ function newGame(numPlayers, configs, seed) {
     gameOver: false,
     winner: null,
     scores: null,
+    // Fresh recorder: cursor 0 is this just-dealt state; seed + recorded actions
+    // fully determine every later position by pure replay.
+    history: createRecorder({ initialState: state, map }),
   };
   resize();
   refresh();
@@ -663,6 +713,10 @@ function buildPanelCtx(viewModel) {
     onDrawTickets: doDrawTickets,
     onKeepTickets: doKeepTickets,
     onPass: doPass,
+    onUndo: doUndo,
+    onRedo: doRedo,
+    canUndo: !!(G.history && G.history.canUndo()),
+    canRedo: !!(G.history && G.history.canRedo()),
     onMenu: goToMenu,
   };
 }
@@ -755,6 +809,17 @@ function boot() {
 
   if (ui.canvas) ui.canvas.addEventListener('click', onCanvasClick);
   window.addEventListener('resize', resize);
+
+  // Keyboard shortcuts: Cmd/Ctrl+Z undoes, Cmd/Ctrl+Shift+Z redoes — but only on
+  // the game screen (so they never fight the setup form's text fields). Pure
+  // playhead moves, no timers, so they stay deterministic and non-flaky.
+  window.addEventListener('keydown', (ev) => {
+    if (!(ev.metaKey || ev.ctrlKey)) return;
+    if (ev.key !== 'z' && ev.key !== 'Z') return;
+    if (!router || router.current !== 'game') return;
+    ev.preventDefault();
+    if (ev.shiftKey) doRedo(); else doUndo();
+  });
 
   // Boot to the landing menu.
   router.show('menu');
