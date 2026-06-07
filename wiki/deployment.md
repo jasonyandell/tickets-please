@@ -14,12 +14,26 @@ build assembles a servable tree:
 - `tools/build.js` → writes `dist/`: the whole `src/` tree copied to `dist/src/`,
   plus a root `dist/index.html` derived from `src/ui/index.html` with its
   `./main.js` / `./style.css` references repointed at `./src/ui/`. Every relative
-  import inside the app is preserved, so `/` serves the game. See [[architecture]].
+  import inside the app is preserved, so `/` serves the game. It also emits a
+  `dist/_headers` (the cache policy below). See [[architecture]].
 - `wrangler.toml` serves `dist/` as Workers static assets (`name = tickets-please`).
+
+## Cache policy (`dist/_headers`)
+Tuned for the persist + reload loop ([[ui]]): a reload should pick up freshly
+deployed code while the deterministic [[ui|save (seed + action tape)]] restores the
+exact game position. `tools/build.js` writes a `_headers` file:
+
+- `/` and `/index.html` → `Cache-Control: no-cache` — the HTML shell is always
+  revalidated, so a ⟳ Reload (manual or the chill auto-reload) gets the latest app.
+- `/src/*` → `Cache-Control: public, max-age=300` — the ES modules cache for 5
+  minutes (fast repeat loads), short enough that a deploy propagates promptly.
+
+This pairs with the in-app **chill auto-reload** ([[ui]]): within 5 min of a move
+the page reloads every ~30s, so an open tab quietly upgrades to a new deploy.
 
 ## CI/CD (`.github/workflows/deploy.yml`)
 On push to `main` (or manual `workflow_dispatch`):
-1. **test** job — `npm test` (164 tests) + `npm run validate` (map invariants).
+1. **test** job — `npm test` (205 tests) + `npm run validate` (map invariants).
 2. **deploy** job (`needs: test`) — `node tools/build.js`, then
    `cloudflare/wrangler-action@v3` publishes with repo secrets
    `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`.

@@ -229,3 +229,44 @@ Reconciled the wiki to everything shipped after the screen-router rebuild:
   [[testing]] (it had drifted to 115 / 3 and was missing the contrast + history
   suites). Lint: no orphan pages, no dangling `[[links]]`, every page reachable
   from [[index]].
+
+### 2026-06-06 — Jam batches 5–11: persist/reload, animation kit, heat-map polish (ingest + lint)
+Reconciled the wiki to everything shipped after the undo/redo + responsive batch:
+- **Persist + reload (Batch 5).** New `src/ui/persist.js`: the save is the
+  *recipe* (seed + playerConfigs + action tape + cursor), restore is a pure
+  **replay** — the same record/replay core as `history.js` (now called out in
+  [[architecture]]). Added a **⟳ Reload** button and a `dist/_headers` cache policy
+  (HTML `no-cache`, `/src/*` `max-age=300`) emitted by `tools/build.js`. → [[ui]],
+  [[deployment]].
+- **Animation kit (Batch 7).** New `src/ui/anim.js`: a PURE, timer-free frame
+  model + isolated, clock-injectable rAF drivers + an instant mode
+  (`?test`/reduced-motion). Documented the **"how we test animations"** recipe
+  (pure maths unit-tested directly; drivers driven by a fake clock; e2e asserts a
+  durable settled fact, never a sleep). → [[ui]], [[testing]].
+- **City skyline icons (Batches 6 & 8).** Cities render as a three-building
+  skyline glyph (halo + lit windows), sized bigger to fill the space and balance
+  the route boxes — replacing the flat dots. → [[ui]] (`render.js:drawCityIcon`),
+  new `e2e/cities.spec.js`.
+- **Ticket heat-map: lit during AI turns (Batch 9).** The heat-map is now a
+  **bold, weight-graded teal outline**, and the "viewer" is decoupled from strict
+  turn-gating: in a 1-human game the lone human's map stays lit even on an AI turn
+  (it never blanks), while 2+ human hotseat still scopes to the active human
+  (null on an AI turn). **Privacy-safe** — only the human viewer's own tickets,
+  unit-tested. → [[ui]], [[architecture]].
+- **Traveling pulse (Batch 10).** A `_-*-_` bump glides source→dest along each
+  ticket path at constant velocity, looping; driven by `anim.js`'s pure pulse
+  model over `vm.ticketPaths` (`viewModel.ticketOrderedPaths`, ordered same as the
+  Dijkstra weights). Static in reduced-motion/test. → [[ui]].
+- **Chill auto-reload (Batch 11).** One isolated 30s `setInterval` consults the
+  pure `persist.autoReloadDue(...)` — fires only within 5 min of the last move,
+  at most once per interval, disabled on the verification path — so an open tab
+  quietly upgrades to a new deploy without ever blocking the e2e. → [[ui]],
+  [[deployment]].
+- **Counts reconciled by running them.** `npm test` → **205/205** green
+  (scoring 13, rules 34, game 22, ai 8, layout 11, viewModel **37**, history 9,
+  contrast 32, simulation 5, **anim 22 (new)**, **persist 12 (new)**);
+  `npm run test:e2e` → **13/13** green across 8 files (board **3**, hotseat 1,
+  undo 1, responsive 3, **persist 2**, **anim 1**, **pulse 1**, **cities 1**).
+  [[map]] routes/tickets unchanged. **Lint:** no orphan pages, no dangling
+  `[[links]]` (only the literal examples in [[CLAUDE]]), every page reachable
+  from [[index]]; the prior CI-count drift in [[deployment]] (164) corrected to 205.

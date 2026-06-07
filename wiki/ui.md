@@ -67,15 +67,35 @@ over `<section data-screen>` elements — one per screen
   between screens, records `lastAction`, drives AI turns on a timer, gates the
   pass-the-device handoff, and owns the `history.js` **undo/redo recorder** —
   recording every applied action onto its tape and binding Undo/Redo (buttons +
-  Cmd/Ctrl+Z / Cmd/Ctrl+Shift+Z) to the recorder's playhead.
-- `render.js` — draws the [[map]] onto the canvas (labeled city dots, routes as
+  Cmd/Ctrl+Z / Cmd/Ctrl+Shift+Z) to the recorder's playhead. It also persists the
+  game after every applied action and restores it on boot (see *Persistence*),
+  exposes the **⟳ Reload** button (`doReload`), and owns the single auto-reload
+  `setInterval` that consults the pure `persist.autoReloadDue(...)` policy.
+- `render.js` — draws the [[map]] onto the canvas (cities as **skyline icons** —
+  a three-building glyph with a white halo + lit windows, sized to fill the space
+  and balance the route boxes, far more legible than a flat dot — routes as
   runs of colored boxes, claimed routes recolored to the owner + a small **owner
   token** — a light disc ringed in the owner's color bearing their initial,
   double routes as offset parallel lines). Also paints the always-on **weighted
-  ticket heat-map**: routes serving the active human's incomplete tickets get a
-  teal glow whose blur + opacity scale with `vm.ticketRouteWeights[id]`, so a
-  route on two tickets' shortest paths glows harder than one (`drawBox`'s
-  `ticketWeight`). Sets the single smoke flag `canvas.dataset.painted`.
+  ticket heat-map**: routes serving the viewer's incomplete tickets get a
+  **bold, weight-graded teal outline** whose width + opacity scale with
+  `vm.ticketRouteWeights[id]`, so a route on two tickets' shortest paths reads
+  hotter than one (`drawBox`'s `ticketWeight`), and a **traveling `_-*-_` pulse**
+  that glides source→dest along each ticket path (see *Traveling ticket pulse*
+  below). Asks `anim.js` for all motion params; sets the single smoke
+  flag `canvas.dataset.painted`.
+- `anim.js` — the **verification-first animation kit** (see *How we test
+  animations* below): a PURE, timer-free frame model (`frame`/`pulse`/`popParams`
+  for the claimed-route pop; `pulseCenter`/`bump`/`pulseIntensityAt` for the
+  traveling ticket pulse) plus two isolated rAF drivers (`createPopAnimator`,
+  `createLoopAnimator`) whose clock/raf are injectable. Touches no DOM; import-safe
+  in Node and the browser. `isInstantMode()` collapses all motion to its final
+  state under `?test` / `window.__INSTANT_ANIM__` / `prefers-reduced-motion`.
+- `persist.js` — **save/restore the game across a reload** (see *Persistence*
+  below). Pure + dependency-injected: serializes the *recipe* (seed +
+  playerConfigs + the recorded action tape + cursor), not engine state, and
+  restores by pure **replay** — the very same model as `history.js`. Also owns the
+  pure `autoReloadDue(...)` policy (clock injected; no `Date.now`/timers).
 - `history.js` — **undo/redo as a recorder/player over the engine** (see the
   *Undo/redo* section below). Pure: it owns an
   append-only action **tape** + a **cursor** and computes state by *replaying*
@@ -114,16 +134,42 @@ applied by `main.js`'s canvas click handler.
 ### Weighted ticket heat-map (always on)
 Orthogonal to claimability, the board is always a **"where to build first" map**.
 `viewModel.js` derives `ticketRouteWeights` (`ticketRouteWeights(state, player,
-map, routeOwner)` → `{ routeId: count }`): for each of the active human's
+map, routeOwner)` → `{ routeId: count }`): for each of the viewer's
 **incomplete** destination tickets, it shortest-paths from end to end over a
 graph where *owned* routes are free connectors (weight 0), *unclaimed* routes
 cost their length, and *opponents'* routes are impassable — then counts how many
-tickets' paths cross each route. `render.js` paints those routes with a teal glow
-whose blur + opacity **scale with the weight** (capped), so a route serving two
-tickets at once glows hotter than one. Completed tickets contribute nothing, and
-the derivation is empty on an AI turn — **opponent tickets never leak** (the same
-hotseat-privacy rule, unit-tested). This *supersedes* the earlier flat
-ticket-route highlight: overlap now reads as intensity, not just on/off.
+tickets' paths cross each route. `render.js:drawBox` paints those routes with a
+**bold, weight-graded teal outline** hugging the cars whose width + opacity
+**scale with the weight** (capped), so a route serving two tickets at once reads
+hotter than one. Completed tickets contribute nothing. This *supersedes* the
+earlier flat ticket-route highlight: overlap now reads as intensity, not on/off.
+
+**Who the heat-map shows (Batch 9 — stays lit during AI turns).** The "viewer"
+is decoupled from strict turn-gating so the human's own map doesn't blank out
+while the AI is moving — the common 1-human-vs-AI case, where the AI takes most
+of the turns you watch (`ticketViewerIndex` in `viewModel.js`):
+- **1 human total** → that human is *always* the viewer, even on an AI turn, with
+  a bold teal outline that stays lit so the human keeps reading their own plan.
+- **2+ humans (hotseat)** → scoped to the *active* human only; on an AI turn the
+  viewer is `null`, so one human's tickets never leak to another (human→human
+  handoffs are gated by the pass-device overlay).
+- **game over** → no heat-map (nothing left to build).
+
+It's **privacy-safe**: it only ever shows the *human viewer's own* tickets — never
+the AI's, never another human's (unit-tested: empty whenever no viewer is set).
+
+### Traveling ticket pulse (Batch 10)
+On top of the static heat-map, a bright **`_-*-_` pulse glides source→dest** along
+each of the viewer's ticket paths at **constant velocity**, looping when it reaches
+the end — so a longer path takes proportionally longer to traverse. The motion is
+a pure function of time: `viewModel.js:ticketOrderedPaths` (`vm.ticketPaths`)
+gives each path's routes **oriented source→dest** (same Dijkstra as the weights),
+and `anim.js`'s `pulseCenter`/`bump`/`pulseIntensityAt` light each
+point by its wrap-aware distance to the moving center. `render.js:drawTicketPulses`
+runs off the single continuous `createLoopAnimator` rAF driver. It's **static in
+reduced-motion / test** (`isInstantMode`) — the durable read is the static
+heat-map, so the gate never depends on motion — and privacy-scoped identically to
+the heat-map (a pulse never traces a hidden opponent ticket).
 
 A claimed route is recolored to its owner and stamped with a small **owner
 token** — a light disc ringed in the owner's color carrying their initial — so
@@ -149,6 +195,46 @@ not a stack of inverse deltas. The model is a **tape + playhead**:
 The module is pure (log + cursor, reducer injected) so it unit-tests without a
 browser; `main.js` owns the recorder instance and wires the buttons + keyboard.
 
+## Persistence & reload (Batch 5)
+The game survives a page reload. Because the engine is [[determinism|deterministic]],
+the **save is the recipe, not a snapshot** — exactly the undo/redo
+insight reused: `persist.js` serializes `{ seed, playerConfigs, actions[], cursor }`
+to `localStorage` (key `tickets-please/save/v1`) and **restores by pure replay**
+of the action tape through the engine reducer (`restoreGame` rebuilds a
+`history.js` recorder). `main.js` saves after *every* applied action, so the save
+is always current; on boot it restores the exact position, falling back to a fresh
+game on a missing/corrupt/foreign save (deserialize never throws). A **⟳ Reload**
+button (`doReload` → `location.reload()`) restores to this same point. **New Game**
+overwrites the save so a later reload restores the new game, not the old one. See
+[[deployment]] for the `_headers` cache policy that makes a reload pick up new code.
+
+### Chill auto-reload (Batch 11)
+A single isolated `setInterval` ticks every **30s** and asks the *pure*
+`persist.autoReloadDue({ now, lastPlayAt, lastReloadAt })` whether to reload. It
+fires only **within 5 min of the last applied move** (the "recently played"
+window) and at most once per interval, so the page picks up freshly-deployed code
+while you're playing but stops reloading once you walk away. Keeping the decision
+a pure clock-injected function (no `Date.now`/timers in the policy) makes it
+trivially unit-testable. **Disabled on the verification path** (`?test` /
+reduced-motion), so the e2e never waits on a timer.
+
+## How we test animations (the anim.js recipe)
+`anim.js` establishes a flake-free pattern, mirrored by `tests/anim.test.js`:
+1. **A pure frame model.** All motion is a function of an `elapsed` number —
+   `frame`/`pulse`/`popParams` (route-claim pop) and `pulseCenter`/`bump`/
+   `pulseIntensityAt` (traveling pulse) — no timers, no globals, no DOM. Unit-test
+   the maths directly (endpoints, midpoint/peak, monotonicity, clamping, wrap).
+2. **Isolated rAF drivers.** `createPopAnimator` (transient pops) and
+   `createLoopAnimator` (the continuous pulse) are the *only* places that read a
+   clock, use `requestAnimationFrame` only (never `setTimeout`), and take an
+   **injectable clock + raf** — so their bookkeeping is unit-tested with a fake
+   clock and a `.tick()` hook, NO real timers.
+3. **Instant mode.** Under `?test` / `window.__INSTANT_ANIM__` / reduced-motion,
+   `isInstantMode()` resolves motion to its final state and no frame is scheduled,
+   so e2e (and a11y) reach the settled visual with **zero timing coupling** — the
+   test asserts a durable fact (pop count incremented, `data-animating` back to
+   `false`, static heat-map present), not a sleep. See `e2e/anim.spec.js`.
+
 ## Hotseat privacy
 Multiple humans share one device, so secrets must not leak. The view-model
 exposes only the **active human's own** hand colors + ticket details; every other
@@ -165,13 +251,22 @@ the view-model is rebuilt. All rules logic stays in the engine.
 
 ## Testing
 Pure unit tests are the primary gate (see [[testing]]):
-- `tests/viewModel.test.js` (30) — the **pure derivation**: actions/claimability,
+- `tests/viewModel.test.js` (37) — the **pure derivation**: actions/claimability,
   hotseat masking, standings/longest-route, scoreboard, the weighted ticket
-  heat-map (overlap accumulates; empty on an AI turn), no-mutation, JSON round-trip.
+  heat-map (overlap accumulates; lit for the lone human even on an AI turn; null
+  for the inactive hotseat human), the ordered source→dest ticket paths, no
+  mutation, JSON round-trip.
 - `tests/layout.test.js` (11) — the **pure geometry** (box counts, hit-testing,
   double routes).
 - `tests/history.test.js` (9) — the **undo/redo recorder**: replay-of-prefix,
   undo skips AI to the previous human action, redo, and branch-on-new-action.
+- `tests/anim.test.js` (22) — the **pure frame model** (frame/pulse/pop +
+  traveling-pulse maths: endpoints, peak, monotonic, clamp, wrap) and both rAF
+  **drivers** under a fake clock (start/retarget/cancel/settle; loop start/stop),
+  with no real timers.
+- `tests/persist.test.js` (12) — **serialize/deserialize** (recipe round-trip,
+  reject corrupt/foreign/old saves without throwing), **restore-by-replay**, and
+  the pure `autoReloadDue` policy (window + interval gating).
 
 Real-browser behaviour is proven by the **contract-based** e2e suite
 (`npm run test:e2e`, Playwright, dev-only) — it drives scripted play-throughs and

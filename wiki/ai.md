@@ -34,7 +34,7 @@ cards back into supply) over drawing. The engine is robust regardless — see th
 `PASS`/end-of-game handling in [[engine-api]] — but the AI avoids reaching it.
 
 ## Testing
-`tests/ai.test.js` (7 tests) asserts: `chooseAction` always returns a legal move
+`tests/ai.test.js` (8 tests) asserts: `chooseAction` always returns a legal move
 across full self-played games; it resolves pending tickets legally; it claims a
 ticket-completing route when one exists and prefers it over an unrelated big
 route; and it is deterministic. A stress run of 180 games (2–5 players × 60

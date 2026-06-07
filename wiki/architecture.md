@@ -58,11 +58,17 @@ Inside the UI the data path runs through **one pure derivation layer**:
   - `screens/*` — per-screen DOM (`menu`, `setup`, `gameover`, `passdevice`).
   - `game/panel.js` (HUD) + `game/board.js` (canvas interaction) — pure views
     over the view-model.
-  - `history.js` — **undo/redo recorder/player**: an append-only action tape + a
-    cursor; state is a pure *replay* of the tape prefix through the engine
-    reducer (never an inverse-delta mutation), so it rides directly on
-    [[determinism]]. Undo/redo move the playhead across human decision points
-    (skipping AI). See [[ui]].
+  - `history.js` (undo/redo) **and** `persist.js` (save/reload) share **one
+    record/replay core**: the seed + an append-only action **tape** fully
+    determine the game, so state is always a pure *replay* of a tape prefix
+    through the engine reducer — never an inverse-delta mutation or a serialized
+    snapshot. Both ride directly on [[determinism]]. `history.js` moves a playhead
+    across human decision points (skipping AI); `persist.js` serializes the same
+    tape to `localStorage` and restores by replaying it. See [[ui]].
+  - `anim.js` — the **pure, timer-free animation kit**: motion as a function of
+    `elapsed` (route-claim pop + the traveling ticket pulse) plus isolated,
+    clock-injectable rAF drivers, with an instant mode for test/reduced-motion.
+    No DOM. See [[ui]] + [[testing]].
   - `main.js` — thin controller wiring engine + AI + renderer; `render.js` +
     `layout.js` — canvas drawing + pure geometry.
 
