@@ -209,3 +209,57 @@ test('hover a route shows its claimability; claim a claimable route', async ({ p
   await page.screenshot({ path: 'artifacts/board-claim.png', fullPage: true });
   expect(errors, `page/console errors:\n${errors.join('\n')}`).toEqual([]);
 });
+
+// Ticket heat-map continuity: in a 1-human-vs-AI game the human's own "build
+// toward" map must stay lit even while the AI is moving (the bug Batch 9 fixes —
+// it used to blank out on every AI turn, which is most of the turns you watch).
+// Contract-only: assert ticketViewerIndex + a non-empty ticketRouteWeights map
+// while currentPlayerIndex points at the AI. Plus a screenshot of the lit path.
+test('ticket heat-map stays lit during the AI turn (1-human game)', async ({ page }) => {
+  const errors = attachErrorCollectors(page);
+
+  await page.goto('/', { waitUntil: 'load' });
+  await page.locator('button[data-action="play"]').click();
+  await page.locator('[data-testid="seed"]').fill(SEED);
+  await page.locator('button[data-action="start"]').click();
+  await expect.poll(async () => (await appState(page)).screen).toBe('game');
+  await expect
+    .poll(() => page.evaluate(() => document.querySelector('#map')?.dataset.painted))
+    .toBe('true');
+
+  await resolveStartingTickets(page);
+  await expect.poll(async () => (await appState(page)).viewModel.phase).toBe('play');
+
+  // The human's own map is lit on their turn: viewer is P1 and the set is non-empty.
+  const human = (await appState(page)).viewModel;
+  expect(human.currentPlayerIndex, 'human is active').toBe(0);
+  expect(human.ticketViewerIndex, 'viewer is the human (P1)').toBe(0);
+  expect(Object.keys(human.ticketRouteWeights).length, 'lit path on the human turn')
+    .toBeGreaterThan(0);
+  // Evidence of the lit ticket path on a human view.
+  await page.screenshot({ path: 'artifacts/board-ticket-path.png', fullPage: true });
+
+  // End the human's turn (draw 2 cards) → control passes to the AI (P2). The
+  // view-model is republished with currentPlayerIndex === 1 before the AI acts.
+  const drawDeck = page.locator('button[data-action="draw-deck"]');
+  await expect(drawDeck).toBeEnabled();
+  await drawDeck.click();
+  await expect(drawDeck).toBeEnabled();
+  await drawDeck.click();
+
+  // Capture a snapshot while it is the AI's turn and assert the human's map is
+  // STILL lit (the fix). The viewer remains the sole human, never the AI.
+  let aiSnap = null;
+  await expect
+    .poll(async () => {
+      const vm = (await appState(page)).viewModel;
+      if (vm && vm.currentPlayerIndex === 1) { aiSnap = vm; return true; }
+      return false;
+    })
+    .toBe(true);
+  expect(aiSnap.ticketViewerIndex, 'viewer stays the human during the AI turn').toBe(0);
+  expect(Object.keys(aiSnap.ticketRouteWeights).length, 'heat-map still lit on the AI turn')
+    .toBeGreaterThan(0);
+
+  expect(errors, `page/console errors:\n${errors.join('\n')}`).toEqual([]);
+});

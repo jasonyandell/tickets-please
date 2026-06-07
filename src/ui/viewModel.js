@@ -255,16 +255,29 @@ export function buildViewModel(state, map, configs = [], opts = {}) {
   const secretForIndex = !gameOver && curPlayer && !playerIsAI(curIdx) ? curIdx : null;
   const revealed = (i) => gameOver || i === secretForIndex;
 
-  // --- Ticket "build toward" heat-map (the active human's own tickets) -----
-  // For each route, how MANY of the active human's INCOMPLETE destination
-  // tickets have their shortest path running through it (over routes the human
-  // could still use). A route serving two of my tickets reads stronger than one
-  // serving a single ticket — an always-on "where to build" heat-map.
-  // PRIVACY: computed ONLY for the active human (secretForIndex); on AI/opponent
-  // turns the weights are empty so no one's tickets ever leak. Each route carries
-  // `ticketWeight` (count) and a derived `ticketRelevant` boolean (weight > 0).
-  const ticketWeights = secretForIndex != null
-    ? ticketRouteWeights(state, players[secretForIndex], map, routeOwner)
+  // --- Ticket "build toward" heat-map (the human VIEWER's own tickets) ------
+  // For each route, how MANY of the viewer's INCOMPLETE destination tickets have
+  // their shortest path running through it (over routes the viewer could still
+  // use). A route serving two of my tickets reads stronger than one serving a
+  // single ticket — an always-on "where to build" heat-map.
+  //
+  // The viewer is DECOUPLED from strict turn-gating so the human's own map does
+  // not blank out while the AI moves (the common 1-human-vs-AI case, where the
+  // AI takes most of the turns you watch):
+  //   - 1 human total  -> that human is ALWAYS the viewer, even on an AI turn.
+  //   - 2+ humans (hotseat) -> scope to the ACTIVE human only (secretForIndex);
+  //     on an AI turn the viewer is null so one human's tickets never leak to
+  //     another. (Hotseat human→human handoffs are gated by the pass-device
+  //     overlay, so no human sees the previous human's live map.)
+  //   - game over -> no heat-map (nothing left to build).
+  // Each route carries `ticketWeight` (count) and a derived `ticketRelevant`
+  // boolean (weight > 0); `ticketViewerIndex` names whose map is shown (or null).
+  const humanIndices = players.map((_, i) => i).filter((i) => !playerIsAI(i));
+  const ticketViewerIndex = gameOver
+    ? null
+    : (humanIndices.length === 1 ? humanIndices[0] : secretForIndex);
+  const ticketWeights = ticketViewerIndex != null
+    ? ticketRouteWeights(state, players[ticketViewerIndex], map, routeOwner)
     : new Map();
   const ticketRouteIds = [];
   const ticketRouteWeightsView = {};
@@ -380,6 +393,7 @@ export function buildViewModel(state, map, configs = [], opts = {}) {
     faceUp,
     players: playerViews,
     secretForIndex,
+    ticketViewerIndex,
     standings,
     leaderIndex,
     longestLeaderIndices,

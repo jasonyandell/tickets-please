@@ -454,7 +454,11 @@ test('ticket weights: a COMPLETE ticket adds no weight', () => {
   assert.deepEqual(vm.ticketRouteWeights, { r_ab: 1, r_ac: 1 });
 });
 
-test('ticket weights: PRIVACY — empty on an AI turn (never leaks tickets)', () => {
+test('ticket weights: single-human game stays lit during the AI turn', () => {
+  // The whole point of the heat-map: in a 1-human-vs-AI game the human's own
+  // "build toward" map must NOT blank out while the AI moves (most of the turns
+  // you watch). It is Bob's (AI) turn, yet Alice (the only human) still sees her
+  // map: t1 A->C → shortest is r_ac.
   const state = makeState({
     current: 1,
     players: [
@@ -463,23 +467,56 @@ test('ticket weights: PRIVACY — empty on an AI turn (never leaks tickets)', ()
     ],
   });
   const vm = buildViewModel(state, MAP, CONFIGS, {});
-  assert.deepEqual(vm.ticketRouteWeights, {});
-  assert.equal(vm.routes.every((r) => r.ticketWeight === 0), true);
+  assert.equal(vm.ticketViewerIndex, 0);
+  assert.deepEqual(vm.ticketRouteWeights, { r_ac: 1 });
+  const byId = Object.fromEntries(vm.routes.map((r) => [r.id, r]));
+  assert.equal(byId.r_ac.ticketWeight, 1);
 });
 
-test('ticket-relevant routes: PRIVACY — empty on an AI turn (never leaks tickets)', () => {
-  // It is Bob's (AI) turn. Even though Alice holds a ticket, nothing is exposed.
+test('ticket weights: HOTSEAT PRIVACY — empty on an AI turn (never leaks)', () => {
+  // 2 humans (Alice, Cara) + 1 AI (Bob). It is Bob's (AI) turn. With more than
+  // one human, the map must NOT show during the AI turn — otherwise the next
+  // human would see the previous human's tickets. So nothing is exposed.
+  const HOTSEAT_CONFIGS = [
+    { name: 'Alice', isAI: false },
+    { name: 'Bob', isAI: true },
+    { name: 'Cara', isAI: false },
+  ];
   const state = makeState({
     current: 1,
     players: [
       { id: 0, name: 'Alice', isAI: false, hand: {}, trains: 45, tickets: [{ id: 't1', from: 'A', to: 'C', points: 5 }], claimedRoutes: [], score: 0 },
-      { id: 1, name: 'Bob', isAI: true, hand: {}, trains: 45, tickets: [{ id: 't1', from: 'A', to: 'C', points: 5 }], claimedRoutes: [], score: 0 },
+      { id: 1, name: 'Bob', isAI: true, hand: {}, trains: 45, tickets: [], claimedRoutes: [], score: 0 },
+      { id: 2, name: 'Cara', isAI: false, hand: {}, trains: 45, tickets: [{ id: 't1', from: 'A', to: 'C', points: 5 }], claimedRoutes: [], score: 0 },
     ],
   });
-  const vm = buildViewModel(state, MAP, CONFIGS, {});
+  const vm = buildViewModel(state, MAP, HOTSEAT_CONFIGS, {});
   assert.equal(vm.secretForIndex, null);
+  assert.equal(vm.ticketViewerIndex, null);
+  assert.deepEqual(vm.ticketRouteWeights, {});
   assert.deepEqual(vm.ticketRouteIds, []);
   assert.equal(vm.routes.every((r) => r.ticketRelevant === false), true);
+});
+
+test('ticket weights: HOTSEAT — scoped to the ACTIVE human only (no leak)', () => {
+  // 2 humans (Alice, Cara) + 1 AI. It is Cara's (human) turn. Only Cara's map
+  // shows — Alice's ticket never leaks. Cara holds t (B->C) → shortest r_bc.
+  const HOTSEAT_CONFIGS = [
+    { name: 'Alice', isAI: false },
+    { name: 'Bob', isAI: true },
+    { name: 'Cara', isAI: false },
+  ];
+  const state = makeState({
+    current: 2,
+    players: [
+      { id: 0, name: 'Alice', isAI: false, hand: {}, trains: 45, tickets: [{ id: 't1', from: 'A', to: 'C', points: 5 }], claimedRoutes: [], score: 0 },
+      { id: 1, name: 'Bob', isAI: true, hand: {}, trains: 45, tickets: [], claimedRoutes: [], score: 0 },
+      { id: 2, name: 'Cara', isAI: false, hand: {}, trains: 45, tickets: [{ id: 't2', from: 'B', to: 'C', points: 4 }], claimedRoutes: [], score: 0 },
+    ],
+  });
+  const vm = buildViewModel(state, MAP, HOTSEAT_CONFIGS, {});
+  assert.equal(vm.ticketViewerIndex, 2);
+  assert.deepEqual(vm.ticketRouteWeights, { r_bc: 1 });
 });
 
 // --- serializability (exposed on window.__APP__ for e2e to read) ------------

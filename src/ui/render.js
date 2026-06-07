@@ -406,9 +406,10 @@ function drawOwnerMark(ctx, box, t, initial, ownerColor) {
 // level: 'claimable' (solid, bold — a clear "go"), 'affordable' (dashed amber —
 // "you can pay, just not this instant"), or 'none' (normal). ticketWeight (>= 0,
 // orthogonal to level) adds a teal halo marking routes that serve the active
-// human's incomplete tickets — "build toward this". The halo's strength scales
-// with the weight: a route on two tickets' shortest paths glows harder than one,
-// turning the board into a "where to build first" heat-map.
+// human's incomplete tickets — "build toward this". It reads as a bold teal
+// OUTLINE around the box plus a softer glow underlay; both strengthen with the
+// weight, so a route on two tickets' shortest paths reads hotter than one,
+// turning the board into an obvious "where to build first" heat-map.
 function drawBox(ctx, box, t, fill, stroke, level, ticketWeight, pop) {
   let c = box.corners.map((pt) => applyTransform(pt, t));
 
@@ -423,21 +424,21 @@ function drawBox(ctx, box, t, fill, stroke, level, ticketWeight, pop) {
     c = c.map((p) => ({ x: cx + (p.x - cx) * pop.scale, y: cy + (p.y - cy) * pop.scale }));
   }
 
-  // Ticket halo: paint the box in the glow color WITH a blur so the color bleeds
-  // outward as a halo, then overpaint with the real fill below. The bled-out
-  // ring stays, reading as "this route serves your ticket(s)". Blur radius and
-  // opacity grow with the weight (capped) so overlaps read as a hotter spot.
+  // Ticket halo (underlay): paint the box in the glow color WITH a blur so the
+  // color bleeds outward as a halo, then overpaint with the real fill below. The
+  // bled-out ring stays, reading as "this route serves your ticket(s)". Blur
+  // radius and opacity grow with the weight (capped) so overlaps read hotter.
+  const tw = Math.min(ticketWeight, 4); // cap so a busy hub doesn't blow out
+  const glow = cssVar('--ticket-glow', '#0f8a9c');
   if (ticketWeight > 0) {
-    const w = Math.min(ticketWeight, 4); // cap so a busy hub doesn't blow out
     ctx.save();
     ctx.beginPath();
     ctx.moveTo(c[0].x, c[0].y);
     for (let i = 1; i < c.length; i++) ctx.lineTo(c[i].x, c[i].y);
     ctx.closePath();
-    const glow = cssVar('--ticket-glow', '#0f8a9c');
     ctx.shadowColor = glow;
-    ctx.shadowBlur = 6 + w * 5;        // 11 at weight 1, hotter as weight rises
-    ctx.globalAlpha = Math.min(1, 0.5 + 0.25 * (w - 1)); // 0.5 → 1.0
+    ctx.shadowBlur = 10 + tw * 6;      // 16 at weight 1, hotter as weight rises
+    ctx.globalAlpha = Math.min(1, 0.7 + 0.1 * (tw - 1)); // 0.7 → 1.0
     ctx.fillStyle = glow;
     ctx.fill();
     ctx.shadowColor = 'transparent';
@@ -472,6 +473,35 @@ function drawBox(ctx, box, t, fill, stroke, level, ticketWeight, pop) {
     ctx.lineWidth = 1;
     ctx.strokeStyle = stroke;
     ctx.stroke();
+  }
+
+  // Ticket outline (overlay): a bold teal border hugging the OUTSIDE of the car
+  // box — the unmistakable "yours to build" read on top of any level stroke. The
+  // ring is outset from the box centroid (so it never hides the claimable/
+  // affordable border) and thickens with weight, so overlapping ticket paths
+  // read as a heavier, hotter outline.
+  if (ticketWeight > 0) {
+    let cx = 0;
+    let cy = 0;
+    for (const p of c) { cx += p.x; cy += p.y; }
+    cx /= c.length; cy /= c.length;
+    const off = 2 + tw;                 // outset distance grows with weight
+    const ring = c.map((p) => {
+      const dx = p.x - cx;
+      const dy = p.y - cy;
+      const len = Math.hypot(dx, dy) || 1;
+      return { x: p.x + (dx / len) * off, y: p.y + (dy / len) * off };
+    });
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(ring[0].x, ring[0].y);
+    for (let i = 1; i < ring.length; i++) ctx.lineTo(ring[i].x, ring[i].y);
+    ctx.closePath();
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 2.5 + tw;           // 3.5 at weight 1, up to 6.5
+    ctx.strokeStyle = glow;
+    ctx.stroke();
+    ctx.restore();
   }
 
   // Pop flash: a brief white wash over the box that fades to nothing (flash→0),
