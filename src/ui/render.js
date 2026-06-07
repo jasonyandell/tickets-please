@@ -19,7 +19,14 @@ import {
   cityName,
 } from './layout.js';
 import { setBoardRenderContext } from './game/board.js';
-import { createPopAnimator, isInstantMode } from './anim.js';
+import {
+  createPopAnimator,
+  createLoopAnimator,
+  isInstantMode,
+  pulseIntensityAt,
+  PULSE_VELOCITY,
+  PULSE_HALF_WIDTH,
+} from './anim.js';
 
 // Player colors used both on the map (claimed routes) and the side panel.
 export const PLAYER_COLORS = ['#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4'];
@@ -39,6 +46,27 @@ let prevClaimedRids = null;
 let popAnimator = null;
 let drawLast = null;
 let popCount = 0;
+
+// ── Traveling ticket pulse (Batch 10: a bright `_-*-_` bump glides source→dest
+// along each of the viewer's ticket paths, looping; see anim.js) ─────────────
+//   pulseAnimator — the single CONTINUOUS rAF driver; re-issues the paint each
+//                   frame so the clock-driven pulse moves. ONE timing place; no
+//                   setTimeout. Lazily created, started only when there is a
+//                   pulse to show and motion is allowed (not instant mode).
+let pulseAnimator = null;
+
+// Start/stop the continuous pulse driver to match whether a pulse should run.
+// Idempotent: re-asserting the same state is a no-op (start()/stop() guard it).
+function syncPulseDriver(shouldRun) {
+  try {
+    if (shouldRun) {
+      if (!pulseAnimator) pulseAnimator = createLoopAnimator({ onFrame: drawLastFrame });
+      pulseAnimator.start();
+    } else if (pulseAnimator) {
+      pulseAnimator.stop();
+    }
+  } catch (_) { /* animation must never break a paint */ }
+}
 
 // Re-issue the most recent paint (driven by the pop animator each frame). It
 // re-enters drawMap with the cached args; no new pops start (the claimed set is
@@ -333,6 +361,12 @@ export function drawMap(ctx, map, state, view, highlight) {
     }
   }
 
+  // Traveling ticket pulse: a bright bump glides source→dest along each of the
+  // viewer's ticket paths at constant velocity, looping — drawn ON TOP of the
+  // static heat-map. Skipped in instant mode (reduced-motion / test) so the gate
+  // never depends on motion; the static heat-map above remains the durable read.
+  drawTicketPulses(ctx, layout, vm, t);
+
   // Draw cities on top.
   for (const c of layout.cities) {
     const p = applyTransform({ x: c.x, y: c.y }, t);
@@ -517,6 +551,76 @@ function drawBox(ctx, box, t, fill, stroke, level, ticketWeight, pop) {
     ctx.fill();
     ctx.restore();
   }
+}
+
+// Draw the traveling pulse over every ticket path the viewer holds, and keep the
+// continuous driver in sync. For each ordered path we sum route lengths into a
+// total path length, place each route at its midpoint distance along the path,
+// then light it by the pure pulse model (anim.js): the `_-*-_` bump glides at a
+// CONSTANT velocity, so a longer path takes proportionally longer to loop. The
+// clock is performance.now() — the loop driver re-issues this paint each frame,
+// so the bump moves. In instant mode (reduced-motion / test) or with no paths /
+// no visible canvas, we draw nothing and STOP the driver: the static heat-map
+// underneath is the durable visual and the gate never couples to motion.
+function drawTicketPulses(ctx, layout, vm, t) {
+  try {
+    const canvas = ctx && ctx.canvas;
+    const hidden = canvas && typeof canvas.offsetParent !== 'undefined' && canvas.offsetParent === null;
+    const paths = vm && Array.isArray(vm.ticketPaths) ? vm.ticketPaths : [];
+    if (isInstantMode() || hidden || paths.length === 0) { syncPulseDriver(false); return; }
+
+    const byId = new Map();
+    for (const rl of layout.routes) byId.set(String(rl.id), rl);
+
+    const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
+    const glow = cssVar('--ticket-glow', '#0f8a9c');
+
+    for (const path of paths) {
+      const ids = path && Array.isArray(path.routeIds) ? path.routeIds : path;
+      if (!Array.isArray(ids) || ids.length === 0) continue;
+
+      // Lay the path out: each route occupies [acc, acc+len]; its center is the
+      // midpoint. The pulse position is measured in these path-distance units.
+      const segs = [];
+      let pathLength = 0;
+      for (const rid of ids) {
+        const rl = byId.get(String(rid));
+        if (!rl) continue;
+        const len = routeLength(rl.route) || 1;
+        segs.push({ rl, center: pathLength + len / 2 });
+        pathLength += len;
+      }
+      if (pathLength <= 0) continue;
+
+      for (const s of segs) {
+        const intensity = pulseIntensityAt(now, pathLength, s.center, {
+          velocity: PULSE_VELOCITY,
+          halfWidth: PULSE_HALF_WIDTH,
+        });
+        if (intensity <= 0.02) continue;
+        for (const box of s.rl.boxes) drawPulseBox(ctx, box, t, intensity, glow);
+      }
+    }
+    syncPulseDriver(true);
+  } catch (_) { /* animation must never break a paint */ }
+}
+
+// Paint one car box as part of the traveling pulse: a bright wash whose opacity
+// and glow scale with the bump intensity, so the `*` peak reads brightest and
+// the `_` tails fade to nothing. Layered over the route + heat-map already drawn.
+function drawPulseBox(ctx, box, t, intensity, glow) {
+  const c = box.corners.map((pt) => applyTransform(pt, t));
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(c[0].x, c[0].y);
+  for (let i = 1; i < c.length; i++) ctx.lineTo(c[i].x, c[i].y);
+  ctx.closePath();
+  ctx.shadowColor = glow;
+  ctx.shadowBlur = 4 + 14 * intensity;     // brighter halo at the peak
+  ctx.globalAlpha = Math.min(1, 0.9 * intensity);
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
+  ctx.restore();
 }
 
 // Paint the board as a map: a radial paper vignette (lighter middle → darker

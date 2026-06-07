@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildViewModel } from '../src/ui/viewModel.js';
+import { buildViewModel, ticketOrderedPaths } from '../src/ui/viewModel.js';
 import { finalScores } from '../src/engine/scoring.js';
 
 // --- Inline fixture map -----------------------------------------------------
@@ -517,6 +517,101 @@ test('ticket weights: HOTSEAT — scoped to the ACTIVE human only (no leak)', ()
   const vm = buildViewModel(state, MAP, HOTSEAT_CONFIGS, {});
   assert.equal(vm.ticketViewerIndex, 2);
   assert.deepEqual(vm.ticketRouteWeights, { r_bc: 1 });
+});
+
+// --- ordered ticket paths (the traveling-pulse source, Batch 10) ------------
+
+test('ticket paths: ORDERED route ids oriented source→dest (single route)', () => {
+  // Alice (active human) holds t1 (A->C). Shortest A->C is the direct r_ac.
+  const state = makeState({
+    players: [
+      { id: 0, name: 'Alice', isAI: false, hand: {}, trains: 45, tickets: [{ id: 't1', from: 'A', to: 'C', points: 5 }], claimedRoutes: [], score: 0 },
+      { id: 1, name: 'Bob', isAI: true, hand: {}, trains: 45, tickets: [], claimedRoutes: [], score: 0 },
+    ],
+  });
+  const vm = buildViewModel(state, MAP, CONFIGS, {});
+  assert.equal(vm.ticketPaths.length, 1);
+  const p = vm.ticketPaths[0];
+  assert.equal(p.ticketId, 't1');
+  assert.equal(p.from, 'A');
+  assert.equal(p.to, 'C');
+  assert.deepEqual(p.routeIds, ['r_ac']);
+});
+
+test('ticket paths: multi-route path is oriented from source to dest', () => {
+  // Bob owns r_ac → Alice's A->C is forced onto A-B-C. The ordered path must run
+  // source→dest: r_ab (touches A) FIRST, then r_bc (touches C) LAST.
+  const state = makeState({
+    players: [
+      { id: 0, name: 'Alice', isAI: false, hand: {}, trains: 45, tickets: [{ id: 't1', from: 'A', to: 'C', points: 5 }], claimedRoutes: [], score: 0 },
+      { id: 1, name: 'Bob', isAI: true, hand: {}, trains: 45, tickets: [], claimedRoutes: ['r_ac'], score: 0 },
+    ],
+    routeOwner: { r_ac: 1 },
+  });
+  const vm = buildViewModel(state, MAP, CONFIGS, {});
+  assert.equal(vm.ticketPaths.length, 1);
+  assert.deepEqual(vm.ticketPaths[0].routeIds, ['r_ab', 'r_bc']);
+
+  // Orientation is real: the first route touches `from`, the last touches `to`.
+  const byId = Object.fromEntries(MAP.routes.map((r) => [r.id, r]));
+  const first = byId[vm.ticketPaths[0].routeIds[0]];
+  const last = byId[vm.ticketPaths[0].routeIds.at(-1)];
+  assert.ok(first.a === 'A' || first.b === 'A', 'first route touches the source');
+  assert.ok(last.a === 'C' || last.b === 'C', 'last route touches the dest');
+});
+
+test('ticket paths: a COMPLETE ticket contributes no path', () => {
+  // Alice owns r_ac which already completes A->C → nothing to trace.
+  const state = makeState({
+    players: [
+      { id: 0, name: 'Alice', isAI: false, hand: {}, trains: 43, tickets: [{ id: 't1', from: 'A', to: 'C', points: 5 }], claimedRoutes: ['r_ac'], score: 0 },
+      { id: 1, name: 'Bob', isAI: true, hand: {}, trains: 45, tickets: [], claimedRoutes: [], score: 0 },
+    ],
+    routeOwner: { r_ac: 0 },
+  });
+  const vm = buildViewModel(state, MAP, CONFIGS, {});
+  assert.deepEqual(vm.ticketPaths, []);
+});
+
+test('ticket paths: HOTSEAT PRIVACY — empty on an AI turn (never leaks)', () => {
+  // 2 humans + 1 AI, AI's turn → no viewer, so no path is exposed (matches the
+  // heat-map's privacy scoping exactly).
+  const HOTSEAT_CONFIGS = [
+    { name: 'Alice', isAI: false },
+    { name: 'Bob', isAI: true },
+    { name: 'Cara', isAI: false },
+  ];
+  const state = makeState({
+    current: 1,
+    players: [
+      { id: 0, name: 'Alice', isAI: false, hand: {}, trains: 45, tickets: [{ id: 't1', from: 'A', to: 'C', points: 5 }], claimedRoutes: [], score: 0 },
+      { id: 1, name: 'Bob', isAI: true, hand: {}, trains: 45, tickets: [], claimedRoutes: [], score: 0 },
+      { id: 2, name: 'Cara', isAI: false, hand: {}, trains: 45, tickets: [{ id: 't1', from: 'A', to: 'C', points: 5 }], claimedRoutes: [], score: 0 },
+    ],
+  });
+  const vm = buildViewModel(state, MAP, HOTSEAT_CONFIGS, {});
+  assert.equal(vm.ticketViewerIndex, null);
+  assert.deepEqual(vm.ticketPaths, []);
+});
+
+test('ticket paths: ordered ids are a subset of the weight set (same Dijkstra)', () => {
+  // The pulse traces the SAME shortest path the heat-map weights — so the ordered
+  // ids set must match the weighted-route id set for the viewer.
+  const state = makeState({
+    players: [
+      { id: 0, name: 'Alice', isAI: false, hand: {}, trains: 45, tickets: [{ id: 't1', from: 'A', to: 'C', points: 5 }, { id: 't2', from: 'B', to: 'C', points: 4 }], claimedRoutes: [], score: 0 },
+      { id: 1, name: 'Bob', isAI: true, hand: {}, trains: 45, tickets: [], claimedRoutes: ['r_ac'], score: 0 },
+    ],
+    routeOwner: { r_ac: 1 },
+  });
+  const vm = buildViewModel(state, MAP, CONFIGS, {});
+  const idsFromPaths = new Set(vm.ticketPaths.flatMap((p) => p.routeIds));
+  assert.deepEqual([...idsFromPaths].sort(), [...vm.ticketRouteIds].sort());
+});
+
+test('ticketOrderedPaths: returns [] for a null/empty player (pure guard)', () => {
+  assert.deepEqual(ticketOrderedPaths(makeState(), null, MAP), []);
+  assert.deepEqual(ticketOrderedPaths(makeState(), { id: 0, tickets: [] }, MAP), []);
 });
 
 // --- serializability (exposed on window.__APP__ for e2e to read) ------------

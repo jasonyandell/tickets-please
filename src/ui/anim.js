@@ -72,6 +72,51 @@ export function popParams(elapsed, dur = POP_DURATION_MS) {
   };
 }
 
+// ── Traveling pulse model (the `_-*-_` bump that glides along a ticket path) ──
+//
+// A bright bump travels source→dest along a ticket's shortest path at CONSTANT
+// velocity, looping when it reaches the end. All motion is pure functions of an
+// `elapsed` time; the rAF loop driver below is the ONLY place that reads a clock.
+
+// Default traveling-pulse tuning (path-distance units = route lengths / cars).
+export const PULSE_VELOCITY = 0.004;   // units per ms → 4 cars/sec along the path
+export const PULSE_HALF_WIDTH = 1.6;   // the bump reaches 0 this far from center
+
+// The pulse center's position along a path of total length `pathLength`, at
+// `elapsed` ms, moving at constant `velocity` (units/ms). LINEAR in elapsed and
+// WRAPS to 0 at the period (= pathLength / velocity) — so a longer path takes
+// proportionally longer to traverse (constant velocity). Returns 0 for a
+// non-positive length/velocity. Always in [0, pathLength).
+export function pulseCenter(elapsed, pathLength, velocity = PULSE_VELOCITY) {
+  if (!(pathLength > 0) || !(velocity > 0)) return 0;
+  const c = (velocity * elapsed) % pathLength;
+  return c < 0 ? c + pathLength : c;
+}
+
+// The `_-*-_` intensity bump: a raised-cosine peak. bump(0)=1 (the `*` center),
+// falls smoothly and SYMMETRICALLY to 0 at |dist| >= halfWidth (and stays 0
+// beyond, never negative). Pure; dist may be negative (bump(-d) === bump(d)).
+export function bump(dist, halfWidth = PULSE_HALF_WIDTH) {
+  if (!(halfWidth > 0)) return 0;
+  const a = Math.abs(dist);
+  if (a >= halfWidth) return 0;
+  return 0.5 * (1 + Math.cos(Math.PI * (a / halfWidth)));
+}
+
+// Intensity of the traveling pulse at a point `pointDist` along a path of length
+// `pathLength`, given the pulse center derived from `elapsed`. Distance to the
+// center is measured the SHORT way around the loop (wrap-aware) so the pulse
+// re-enters smoothly at the start. Returns a value in [0, 1].
+export function pulseIntensityAt(elapsed, pathLength, pointDist, opts = {}) {
+  if (!(pathLength > 0)) return 0;
+  const velocity = opts.velocity != null ? opts.velocity : PULSE_VELOCITY;
+  const halfWidth = opts.halfWidth != null ? opts.halfWidth : PULSE_HALF_WIDTH;
+  const c = pulseCenter(elapsed, pathLength, velocity);
+  let d = Math.abs(pointDist - c);
+  if (d > pathLength / 2) d = pathLength - d; // measure the short way around
+  return bump(d, halfWidth);
+}
+
 // ── Instant mode ────────────────────────────────────────────────────────────
 
 // True when animations should resolve instantly (final state, no frames):
@@ -179,6 +224,49 @@ export function createPopAnimator(opts = {}) {
       onFrame();
       if (!active()) onChange();
       return active();
+    },
+  };
+}
+
+// A continuous, LOOPING rAF driver — the timing home for animations that run
+// indefinitely (the traveling ticket pulse). While started it calls onFrame
+// every animation frame, so the renderer can repaint a clock-driven pulse; it
+// stops cleanly on stop(). requestAnimationFrame ONLY (never setTimeout), and
+// start() is idempotent (re-issuing it while running is a no-op). Injectable
+// raf/caf keep it unit-testable with NO real timers (drive it via .tick()).
+export function createLoopAnimator(opts = {}) {
+  const raf = opts.raf
+    || ((cb) => (typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame(cb) : null));
+  const caf = opts.caf
+    || ((h) => { if (typeof cancelAnimationFrame !== 'undefined' && h != null) cancelAnimationFrame(h); });
+  const onFrame = opts.onFrame || (() => {});
+
+  let running = false;
+  let handle = null;
+
+  function loop() {
+    handle = null;
+    onFrame();                 // repaint with this frame's (clock-derived) params
+    if (running) handle = raf(loop);
+  }
+
+  return {
+    start() {
+      if (running) return this;
+      running = true;
+      if (handle == null) handle = raf(loop);
+      return this;
+    },
+    stop() {
+      running = false;
+      caf(handle);
+      handle = null;
+    },
+    isRunning: () => running,
+    // Deterministic test hook: the loop body without a real frame.
+    tick() {
+      onFrame();
+      return running;
     },
   };
 }

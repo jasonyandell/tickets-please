@@ -279,6 +279,12 @@ export function buildViewModel(state, map, configs = [], opts = {}) {
   const ticketWeights = ticketViewerIndex != null
     ? ticketRouteWeights(state, players[ticketViewerIndex], map, routeOwner)
     : new Map();
+  // ORDERED source→dest paths for the SAME viewer — drives the traveling pulse
+  // (anim.js). Privacy-scoped identically to the heat-map above (empty unless a
+  // viewer is set), so a pulse never traces an opponent's hidden ticket.
+  const ticketPaths = ticketViewerIndex != null
+    ? ticketOrderedPaths(state, players[ticketViewerIndex], map, routeOwner)
+    : [];
   const ticketRouteIds = [];
   const ticketRouteWeightsView = {};
   for (const [rid, w] of ticketWeights) {
@@ -400,6 +406,7 @@ export function buildViewModel(state, map, configs = [], opts = {}) {
     longestPathMax: maxLongest,
     ticketRouteIds,
     ticketRouteWeights: ticketRouteWeightsView,
+    ticketPaths,
     finalRound,
     finalTurnsLeft,
     scoreboard,
@@ -442,24 +449,7 @@ export function ticketRouteWeights(state, player, map, routeOwner = (state && st
   const playerId = player.id != null ? player.id : 0;
   const owners = routeOwner || {};
 
-  // Build the passable adjacency: city -> [{ to, rid, w }].
-  const adj = new Map();
-  const addEdge = (from, to, rid, w) => {
-    if (!adj.has(from)) adj.set(from, []);
-    adj.get(from).push({ to, rid, w });
-  };
-  for (const r of getRoutes(map)) {
-    const rid = routeIdOf(r);
-    const owner = owners[rid];
-    let w;
-    if (owner == null) w = routeLength(r);          // unclaimed -> cost to build
-    else if (sameId(owner, playerId)) w = 0;        // mine -> free connector
-    else continue;                                  // opponent's -> impassable
-    const a = routeFrom(r);
-    const b = routeTo(r);
-    addEdge(a, b, rid, w);
-    addEdge(b, a, rid, w);
-  }
+  const adj = buildPassableAdj(map, playerId, owners);
 
   for (const t of tickets) {
     let done = false;
@@ -482,6 +472,75 @@ export function ticketRouteWeights(state, player, map, routeOwner = (state && st
  */
 export function ticketRelevantRouteIds(state, player, map, routeOwner = (state && state.routeOwner) || {}) {
   return new Set(ticketRouteWeights(state, player, map, routeOwner).keys());
+}
+
+/**
+ * Build the player's passable adjacency map for shortest-path search:
+ *   city -> [{ to, rid, w }]
+ * Edge weights model "what would I still have to build":
+ *   - a route the player already owns  -> 0  (a free connector)
+ *   - an unclaimed route               -> its length (cars to lay)
+ *   - a route owned by someone else    -> impassable (skipped)
+ * Pure; the single source of the graph both the weight + ordered-path
+ * derivations traverse, so they always agree.
+ */
+function buildPassableAdj(map, playerId, owners) {
+  const adj = new Map();
+  const addEdge = (from, to, rid, w) => {
+    if (!adj.has(from)) adj.set(from, []);
+    adj.get(from).push({ to, rid, w });
+  };
+  for (const r of getRoutes(map)) {
+    const rid = routeIdOf(r);
+    const owner = owners[rid];
+    let w;
+    if (owner == null) w = routeLength(r);          // unclaimed -> cost to build
+    else if (sameId(owner, playerId)) w = 0;        // mine -> free connector
+    else continue;                                  // opponent's -> impassable
+    const a = routeFrom(r);
+    const b = routeTo(r);
+    addEdge(a, b, rid, w);
+    addEdge(b, a, rid, w);
+  }
+  return adj;
+}
+
+/**
+ * Per-ticket ORDERED shortest path for the viewer: for each of `player`'s
+ * INCOMPLETE destination tickets, the route ids on its shortest path as an
+ * ORDERED list oriented source→dest (the same Dijkstra {@link ticketRouteWeights}
+ * counts over, but kept in walk order instead of collapsed to weights). Drives
+ * the traveling-pulse overlay (anim.js) — a bright bump glides from `from` to
+ * `to` along `routeIds`.
+ *
+ * Each entry: { ticketId, from, to, routeIds: string[] } with routeIds[0] the
+ * route touching `from` and the last touching `to`. Tickets with no usable path
+ * (or already complete) are omitted. Pure + deterministic. Callers MUST pass
+ * only the active human's player object so it never reveals an opponent's path.
+ *
+ * @returns {Array<{ticketId:*, from:*, to:*, routeIds:string[]}>}
+ */
+export function ticketOrderedPaths(state, player, map, routeOwner = (state && state.routeOwner) || {}) {
+  const out = [];
+  if (!player) return out;
+  const tickets = Array.isArray(player.tickets) ? player.tickets : [];
+  if (tickets.length === 0) return out;
+  const playerId = player.id != null ? player.id : 0;
+  const adj = buildPassableAdj(map, playerId, routeOwner || {});
+
+  for (const t of tickets) {
+    let done = false;
+    try { done = !!ticketComplete(state, playerId, t, map); } catch (_) { done = false; }
+    if (done) continue;
+    const from = ticketFrom(t);
+    const to = ticketTo(t);
+    // shortestPathRouteIds walks target→source, so reverse for source→dest.
+    const rev = shortestPathRouteIds(adj, from, to);
+    if (rev.length === 0) continue;
+    const routeIds = rev.slice().reverse().map((rid) => String(rid));
+    out.push({ ticketId: t.id, from, to, routeIds });
+  }
+  return out;
 }
 
 // Dijkstra over the weighted adjacency; returns the route ids on one shortest
