@@ -19,9 +19,79 @@ import {
   cityName,
 } from './layout.js';
 import { setBoardRenderContext } from './game/board.js';
+import { createPopAnimator, isInstantMode } from './anim.js';
 
 // Player colors used both on the map (claimed routes) and the side panel.
 export const PLAYER_COLORS = ['#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4'];
+
+// ── Claimed-route "pop" animation (the reusable anim pattern; see anim.js) ───
+// State lives at module scope so it survives across the renderer's per-frame
+// drawMap() calls (the controller owns the render loop; we never import it).
+//   prevClaimedRids — claimed set from the previous paint, to detect NEW claims.
+//                     null until the first paint so we never pop the whole board
+//                     on boot / on a restored game (seed silently the first time).
+//   popAnimator     — the single rAF driver; repaints via drawLast() each frame.
+//   drawLast        — the exact args of the last drawMap() call, so the driver
+//                     can re-issue the paint without reaching into the controller.
+//   popCount        — durable, monotonic count of pops triggered (exposed on the
+//                     canvas so e2e can assert "a pop fired" with no timing).
+let prevClaimedRids = null;
+let popAnimator = null;
+let drawLast = null;
+let popCount = 0;
+
+// Re-issue the most recent paint (driven by the pop animator each frame). It
+// re-enters drawMap with the cached args; no new pops start (the claimed set is
+// unchanged), it just reads fresher pop params.
+function drawLastFrame() {
+  if (drawLast) {
+    drawMap(drawLast.ctx, drawLast.map, drawLast.state, drawLast.view, drawLast.highlight);
+  }
+}
+
+// Reflect the animator's liveness on the canvas: a single boolean smoke flag
+// (data-animating) plus a durable pop counter — the Observable State Contract
+// for animation (facts, never pixels).
+function syncAnimFlags(canvas) {
+  if (!canvas) return;
+  canvas.dataset.animating = (popAnimator && popAnimator.isActive()) ? 'true' : 'false';
+  canvas.dataset.popCount = String(popCount);
+}
+
+// Detect newly-claimed routes between paints and pop each one. Honors instant
+// mode (reduced-motion / test): the pop is still COUNTED (so e2e sees it fired)
+// but no rAF runs, so the final owned style is reached with zero timing coupling.
+function triggerPops(canvas, claimedRids) {
+  try {
+    if (prevClaimedRids === null) { prevClaimedRids = claimedRids; syncAnimFlags(canvas); return; }
+    const fresh = [];
+    for (const rid of claimedRids) if (!prevClaimedRids.has(rid)) fresh.push(rid);
+    prevClaimedRids = claimedRids;
+    if (fresh.length === 0) return;
+
+    if (isInstantMode()) {
+      // Instant: count the pops, skip the animation entirely (final state now).
+      popCount += fresh.length;
+      syncAnimFlags(canvas);
+      return;
+    }
+    if (!popAnimator) {
+      popAnimator = createPopAnimator({
+        onFrame: drawLastFrame,
+        onChange: () => syncAnimFlags(canvas),
+      });
+    }
+    for (const rid of fresh) { popCount += 1; popAnimator.start(rid); }
+    syncAnimFlags(canvas);
+  } catch (_) { /* animation must never break a paint */ }
+}
+
+// Live pop params for a claimed route this frame, or null (no pop / instant).
+function popFor(rid) {
+  try {
+    return popAnimator ? popAnimator.paramsFor(String(rid)) : null;
+  } catch (_) { return null; }
+}
 
 // Read a CSS custom property off :root so canvas paint shares the same design
 // tokens the DOM uses via var(). The canvas can't resolve var(), so it samples
@@ -188,6 +258,9 @@ function routeLevels(highlight, claimedRids) {
 // view: { width, height, transform }; highlight: Set<routeId> claimable now.
 export function drawMap(ctx, map, state, view, highlight) {
   const { width, height } = view;
+  // Cache this exact call so the pop animator can re-issue the paint each frame
+  // (it owns no controller state; it just replays the latest draw).
+  drawLast = { ctx, map, state, view, highlight };
   ctx.clearRect(0, 0, width, height);
 
   // Map-like backdrop: a soft paper vignette + a faint graticule.
@@ -201,6 +274,8 @@ export function drawMap(ctx, map, state, view, highlight) {
   for (const rl of layout.routes) {
     if (owners.get(rl.id) !== undefined) claimedRids.add(String(rl.id));
   }
+  // Pop any route claimed since the last paint (first anim of the reusable kit).
+  triggerPops(ctx.canvas, claimedRids);
   const levels = routeLevels(highlight, claimedRids);
 
   // Read the published view-model once for: the active human's per-route ticket
@@ -239,8 +314,10 @@ export function drawMap(ctx, map, state, view, highlight) {
       fill = isGray ? cardColorCss('gray') : cardColorCss(col);
     }
 
+    // A just-claimed route pops (grows + flashes white) then settles to owned.
+    const pop = claimed ? popFor(rid) : null;
     for (const box of rl.boxes) {
-      drawBox(ctx, box, t, fill, stroke, level, ticketWeight);
+      drawBox(ctx, box, t, fill, stroke, level, ticketWeight, pop);
     }
 
     // Owner indicator: a claimed route gets the owner's colored fill PLUS a
@@ -332,8 +409,19 @@ function drawOwnerMark(ctx, box, t, initial, ownerColor) {
 // human's incomplete tickets — "build toward this". The halo's strength scales
 // with the weight: a route on two tickets' shortest paths glows harder than one,
 // turning the board into a "where to build first" heat-map.
-function drawBox(ctx, box, t, fill, stroke, level, ticketWeight) {
-  const c = box.corners.map((pt) => applyTransform(pt, t));
+function drawBox(ctx, box, t, fill, stroke, level, ticketWeight, pop) {
+  let c = box.corners.map((pt) => applyTransform(pt, t));
+
+  // Pop: scale the car box around its own centroid so a freshly-claimed route
+  // briefly bulges then settles (scale returns to 1). Pure geometry on the
+  // already-transformed corners — no extra canvas transform to leak.
+  if (pop && pop.scale && pop.scale !== 1) {
+    let cx = 0;
+    let cy = 0;
+    for (const p of c) { cx += p.x; cy += p.y; }
+    cx /= c.length; cy /= c.length;
+    c = c.map((p) => ({ x: cx + (p.x - cx) * pop.scale, y: cy + (p.y - cy) * pop.scale }));
+  }
 
   // Ticket halo: paint the box in the glow color WITH a blur so the color bleeds
   // outward as a halo, then overpaint with the real fill below. The bled-out
@@ -384,6 +472,20 @@ function drawBox(ctx, box, t, fill, stroke, level, ticketWeight) {
     ctx.lineWidth = 1;
     ctx.strokeStyle = stroke;
     ctx.stroke();
+  }
+
+  // Pop flash: a brief white wash over the box that fades to nothing (flash→0),
+  // so the claim "lights up" then settles into the owner color underneath.
+  if (pop && pop.flash > 0) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(c[0].x, c[0].y);
+    for (let i = 1; i < c.length; i++) ctx.lineTo(c[i].x, c[i].y);
+    ctx.closePath();
+    ctx.globalAlpha = Math.min(1, pop.flash);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.restore();
   }
 }
 
