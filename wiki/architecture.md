@@ -7,7 +7,7 @@ reduces them into new *state*; the UI renders the state.
 ```
             ┌─────────────┐   action    ┌──────────────────────────┐
   human ───▶│   src/ui    │────────────▶│        src/engine         │
-            │  (canvas)   │◀────────────│  pure reducer over state  │
+            │  (screens)  │◀────────────│  pure reducer over state  │
             └─────────────┘   state     └──────────────────────────┘
                                               ▲           │
                                        action │           │ state
@@ -15,6 +15,17 @@ reduces them into new *state*; the UI renders the state.
                                           ┌────────────────────┐
                                           │      src/ai        │
                                           └────────────────────┘
+```
+
+Inside the UI the data path runs through **one pure derivation layer**:
+
+```
+  engine state ──▶ viewModel.js (PURE buildViewModel) ──▶ window.__APP__.viewModel
+                                                          │
+                              ┌───────────────────────────┴───────────────┐
+                          game/panel.js (HUD)                   game/board.js (canvas)
+                              renders viewModel                    renders viewModel
+                          (the e2e suite reads the SAME object — see [[testing]])
 ```
 
 ## Modules (`src/engine/`)
@@ -35,7 +46,20 @@ reduces them into new *state*; the UI renders the state.
 
 ## Clients
 - `src/ai/ai.js` — `chooseAction(state, playerId)` heuristic bot. See [[ai]].
-- `src/ui/` — canvas renderer + input. See [[ui]].
+- `src/ui/` — the browser client. See [[ui]] for the full module split. Key
+  pieces:
+  - `viewModel.js` — **pure derivation**: `buildViewModel(state, …)` turns engine
+    state into a plain, render-ready object (legality, affordability, hotseat
+    masking, standings, scoreboard). No DOM/globals/side effects, so it is
+    unit-tested directly and is the single source the renderers AND the e2e suite
+    read.
+  - `app.js` — screen router (`menu | setup | game | gameover`) + the
+    `window.__APP__` Observable State Contract.
+  - `screens/*` — per-screen DOM (`menu`, `setup`, `gameover`, `passdevice`).
+  - `game/panel.js` (HUD) + `game/board.js` (canvas interaction) — pure views
+    over the view-model.
+  - `main.js` — thin controller wiring engine + AI + renderer; `render.js` +
+    `layout.js` — canvas drawing + pure geometry.
 
 ## Principles
 - **Pure & immutable.** Reducers return new state; never mutate inputs.

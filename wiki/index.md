@@ -25,7 +25,7 @@ and [[log]] for the chronological build record.
 - [[engine-api]] — the reducer, state shape, actions (mirrors `CONTRACT.md`).
 - [[determinism]] — the seeded RNG and why the engine is reproducible.
 - [[ai]] — how the computer opponents choose moves.
-- [[ui]] — the canvas renderer and interaction model.
+- [[ui]] — the screen router, the pure view-model, and the canvas board.
 - [[testing]] — how correctness is guaranteed; how to run the suite.
 - [[browser-verify]] — the self-improving skill that proves the UI renders.
 

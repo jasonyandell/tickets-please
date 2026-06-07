@@ -169,3 +169,32 @@ _(The TEST-bug fix + this log rewrite landed as commit `62fba9c`.)_
   and added an integrity rule to the skill: *log/report only what you observed.*
 - **Commits `cc51a3a` (flawed), `f9e6db6` (real fix).** Live site confirmed
   rendering in a real browser at https://tickets-please.jasonyandell.workers.dev.
+
+### 2026-06-06 — UI rebuild: screens + pure view-model + verification-first (ingest)
+- **Rebuilt the UI from a single always-on pane into a screen router** (`app.js`
+  over `<section data-screen>`: `menu | setup | game | gameover`) driven by a thin
+  `main.js` controller. Built in three waves:
+  1. **Foundation** — extracted `viewModel.js`, a PURE `buildViewModel` that
+     derives everything the UI renders (legality, affordability + per-route
+     blocked reasons, hotseat masking, live standings/longest-route, the
+     game-over scoreboard) with no DOM/globals/side effects.
+  2. **App shell + contract** — the router and the **Observable State Contract**
+     `window.__APP__ = { screen, viewModel, lastAction }` (plus `window.__BOARD__`
+     for route hit-testing), the screens (`menu`/`setup`/`gameover`), and stable
+     `[data-testid]` / `button[data-action]`/`data-reason` hooks.
+  3. **Guided loop + clarity + privacy** — `game/panel.js` (turn banner + prompt,
+     self-explaining disabled actions, explicit 2nd-card step, ticket-keep
+     checklist, standings), `game/board.js` (hover tooltip with cost /
+     claimability / blocked reason), the endgame scoreboard, and hotseat privacy
+     (counts-only opponents + the `passdevice.js` pass-the-device interstitial).
+- **Mid-stream pivot away from flaky color e2e.** The old browser check sampled
+  the canvas for "hundreds of distinct colors" (flaky + slow, and green-on-wrong-
+  picture proves nothing). Replaced it with **contract-based** deterministic
+  play-throughs that assert FACTS via `window.__APP__` + `data-testid`, keeping a
+  single `canvas.dataset.painted` smoke flag. **Canvas color/pixel sampling is now
+  banned.** Updated [[ui]], [[testing]], [[browser-verify]], [[architecture]].
+- **Verification (observed):** `npm test` → **115/115** green
+  (scoring 13, rules 34, game 22, ai 8, layout 11, **viewModel 22 (new)**,
+  simulation 5); `npm run test:e2e` → **3/3** green (`board.spec.js` ×2,
+  `hotseat.spec.js` ×1). The contract play-throughs save `artifacts/board.png` /
+  `board-claim.png`, opened to confirm the board really renders.
