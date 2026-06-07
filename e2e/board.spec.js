@@ -160,6 +160,21 @@ test('hover a route shows its claimability; claim a claimable route', async ({ p
   expect(flagged, 'ticketRouteIds matches per-route ticketRelevant flags')
     .toEqual(new Set(vm0.ticketRouteIds.map(String)));
 
+  // Weighted heat-map: each route carries a ticketWeight (how many of my
+  // incomplete tickets' shortest paths use it). The published weight map, the
+  // per-route weights, and the relevant set must all agree, every weight >= 1,
+  // and at least one route is highlighted.
+  const weights = vm0.ticketRouteWeights;
+  expect(weights && typeof weights === 'object', 'ticketRouteWeights exposed').toBe(true);
+  expect(new Set(Object.keys(weights).map(String)), 'weight keys match the relevant set')
+    .toEqual(new Set(vm0.ticketRouteIds.map(String)));
+  for (const r of vm0.routes) {
+    const expected = weights[String(r.id)] || 0;
+    expect(r.ticketWeight || 0, `route ${r.id} weight mirrors the map`).toBe(expected);
+  }
+  expect(Object.values(weights).every((w) => w >= 1), 'every published weight is >= 1').toBe(true);
+  expect(Math.max(0, ...Object.values(weights)), 'at least one weighted route').toBeGreaterThan(0);
+
   // The board exposes a hit-testable on-screen point for the route.
   const center = await page.evaluate((id) => window.__BOARD__.routeCenter(id), target.id);
   expect(center, 'board.routeCenter resolved a point').toBeTruthy();

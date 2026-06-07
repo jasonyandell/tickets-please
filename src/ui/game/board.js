@@ -195,6 +195,7 @@ function showTip(routeId, cssX, cssY, pinned) {
     ownerIndex: r.ownerIndex != null ? r.ownerIndex : null,
     ownerName: r.ownerName || null,
     ticketRelevant: !!r.ticketRelevant,
+    ticketWeight: r.ticketWeight || 0,
     reason: r.reason || null,
     cost: r.cost || null,
     status: status.cls,

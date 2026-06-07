@@ -255,17 +255,28 @@ export function buildViewModel(state, map, configs = [], opts = {}) {
   const secretForIndex = !gameOver && curPlayer && !playerIsAI(curIdx) ? curIdx : null;
   const revealed = (i) => gameOver || i === secretForIndex;
 
-  // --- Ticket-relevant routes (the active human's "build toward" hint) -----
-  // Which routes lie on a shortest path connecting each of the active human's
-  // INCOMPLETE destination tickets, over routes they could still use. PRIVACY:
-  // computed ONLY for the active human (secretForIndex); on AI/opponent turns
-  // the set is empty so no one's tickets ever leak. Each route also carries a
-  // `ticketRelevant` boolean for the renderer.
-  const ticketRids = secretForIndex != null
-    ? ticketRelevantRouteIds(state, players[secretForIndex], map, routeOwner)
-    : new Set();
-  const ticketRouteIds = Array.from(ticketRids);
-  for (const r of routes) r.ticketRelevant = ticketRids.has(String(r.id));
+  // --- Ticket "build toward" heat-map (the active human's own tickets) -----
+  // For each route, how MANY of the active human's INCOMPLETE destination
+  // tickets have their shortest path running through it (over routes the human
+  // could still use). A route serving two of my tickets reads stronger than one
+  // serving a single ticket — an always-on "where to build" heat-map.
+  // PRIVACY: computed ONLY for the active human (secretForIndex); on AI/opponent
+  // turns the weights are empty so no one's tickets ever leak. Each route carries
+  // `ticketWeight` (count) and a derived `ticketRelevant` boolean (weight > 0).
+  const ticketWeights = secretForIndex != null
+    ? ticketRouteWeights(state, players[secretForIndex], map, routeOwner)
+    : new Map();
+  const ticketRouteIds = [];
+  const ticketRouteWeightsView = {};
+  for (const [rid, w] of ticketWeights) {
+    ticketRouteIds.push(rid);
+    ticketRouteWeightsView[rid] = w;
+  }
+  for (const r of routes) {
+    const w = ticketWeights.get(String(r.id)) || 0;
+    r.ticketWeight = w;
+    r.ticketRelevant = w > 0;
+  }
 
   // --- Players ------------------------------------------------------------
   const playerViews = players.map((p, i) => {
@@ -374,6 +385,7 @@ export function buildViewModel(state, map, configs = [], opts = {}) {
     longestLeaderIndices,
     longestPathMax: maxLongest,
     ticketRouteIds,
+    ticketRouteWeights: ticketRouteWeightsView,
     finalRound,
     finalTurnsLeft,
     scoreboard,
@@ -390,22 +402,26 @@ function sameId(a, b) {
 }
 
 /**
- * Route ids on a shortest path connecting each of `player`'s INCOMPLETE
- * destination tickets, traversing only routes the player could still use.
+ * Per-route "ticket weight": for each route id, how many of `player`'s
+ * INCOMPLETE destination tickets have their shortest path running through it,
+ * traversing only routes the player could still use. A route on two tickets'
+ * paths gets weight 2 — the heat-map's "build here, it serves more than one
+ * goal" signal.
  *
  * Edge weights model "what would I still have to build":
  *   - a route the player already owns  -> 0  (a free connector)
  *   - an unclaimed route               -> its length (cars to lay)
  *   - a route owned by someone else    -> impassable (skipped)
  *
- * Pure + deterministic (ties broken by route/city id). Returns a Set of route
- * id strings. Callers MUST pass only the active human's player object so this
- * never reveals an opponent's tickets.
+ * Pure + deterministic (ties broken by route/city id). Returns a Map of route
+ * id string -> count (>= 1; routes on no path are absent). Callers MUST pass
+ * only the active human's player object so this never reveals an opponent's
+ * tickets.
  *
- * @returns {Set<string>}
+ * @returns {Map<string, number>}
  */
-export function ticketRelevantRouteIds(state, player, map, routeOwner = (state && state.routeOwner) || {}) {
-  const out = new Set();
+export function ticketRouteWeights(state, player, map, routeOwner = (state && state.routeOwner) || {}) {
+  const out = new Map();
   if (!player) return out;
   const tickets = Array.isArray(player.tickets) ? player.tickets : [];
   if (tickets.length === 0) return out;
@@ -436,10 +452,22 @@ export function ticketRelevantRouteIds(state, player, map, routeOwner = (state &
     try { done = !!ticketComplete(state, playerId, t, map); } catch (_) { done = false; }
     if (done) continue;
     for (const rid of shortestPathRouteIds(adj, ticketFrom(t), ticketTo(t))) {
-      out.add(String(rid));
+      const k = String(rid);
+      out.set(k, (out.get(k) || 0) + 1);
     }
   }
   return out;
+}
+
+/**
+ * The SET of route ids that serve at least one of `player`'s incomplete tickets
+ * — a thin boolean view over {@link ticketRouteWeights}. Kept for callers that
+ * only need "is this route relevant?" without the count.
+ *
+ * @returns {Set<string>}
+ */
+export function ticketRelevantRouteIds(state, player, map, routeOwner = (state && state.routeOwner) || {}) {
+  return new Set(ticketRouteWeights(state, player, map, routeOwner).keys());
 }
 
 // Dijkstra over the weighted adjacency; returns the route ids on one shortest

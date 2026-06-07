@@ -203,14 +203,12 @@ export function drawMap(ctx, map, state, view, highlight) {
   }
   const levels = routeLevels(highlight, claimedRids);
 
-  // Read the published view-model once for: the active human's ticket-relevant
-  // set (privacy-safe — the view-model only populates it for the active human)
+  // Read the published view-model once for: the active human's per-route ticket
+  // WEIGHT (privacy-safe — the view-model only populates it for the active human;
+  // weight = how many of my incomplete tickets' shortest paths use this route)
   // and per-route owner display names (so a claimed route can be marked with its
   // owner's initial). Both are facts already derived in viewModel.js.
   const vm = liveViewModel();
-  const ticketRids = new Set(
-    vm && Array.isArray(vm.ticketRouteIds) ? vm.ticketRouteIds.map(String) : [],
-  );
   const vmRoutesById = new Map();
   if (vm && Array.isArray(vm.routes)) {
     for (const r of vm.routes) vmRoutesById.set(String(r.id), r);
@@ -224,8 +222,11 @@ export function drawMap(ctx, map, state, view, highlight) {
     const claimed = ownerId !== undefined;
     const level = claimed ? 'none' : (levels.get(String(rid)) || 'none');
     // Highlight only UNCLAIMED ticket routes — what the player still has to
-    // build (a claimed route already reads as owned via its color + mark).
-    const ticketRelevant = !claimed && ticketRids.has(String(rid));
+    // build (a claimed route already reads as owned via its color + mark). The
+    // weight (how many of my tickets this route serves) grades the glow: routes
+    // serving more tickets glow harder, so overlaps pop as "build here first".
+    const vmrForWeight = vmRoutesById.get(String(rid));
+    const ticketWeight = claimed ? 0 : ((vmrForWeight && vmrForWeight.ticketWeight) || 0);
 
     let fill;
     let stroke = 'rgba(0,0,0,0.35)';
@@ -239,7 +240,7 @@ export function drawMap(ctx, map, state, view, highlight) {
     }
 
     for (const box of rl.boxes) {
-      drawBox(ctx, box, t, fill, stroke, level, ticketRelevant);
+      drawBox(ctx, box, t, fill, stroke, level, ticketWeight);
     }
 
     // Owner indicator: a claimed route gets the owner's colored fill PLUS a
@@ -323,16 +324,20 @@ function drawOwnerMark(ctx, box, t, initial, ownerColor) {
 }
 
 // level: 'claimable' (solid, bold — a clear "go"), 'affordable' (dashed amber —
-// "you can pay, just not this instant"), or 'none' (normal). ticketRelevant adds
-// a soft teal halo (orthogonal to level) marking routes that serve the active
-// human's incomplete tickets — "build toward this".
-function drawBox(ctx, box, t, fill, stroke, level, ticketRelevant) {
+// "you can pay, just not this instant"), or 'none' (normal). ticketWeight (>= 0,
+// orthogonal to level) adds a teal halo marking routes that serve the active
+// human's incomplete tickets — "build toward this". The halo's strength scales
+// with the weight: a route on two tickets' shortest paths glows harder than one,
+// turning the board into a "where to build first" heat-map.
+function drawBox(ctx, box, t, fill, stroke, level, ticketWeight) {
   const c = box.corners.map((pt) => applyTransform(pt, t));
 
-  // Ticket halo: paint the box once in the glow color WITH a blur so the color
-  // bleeds outward as a halo, then overpaint with the real fill below. The
-  // bled-out ring stays, reading as "this route serves your ticket".
-  if (ticketRelevant) {
+  // Ticket halo: paint the box in the glow color WITH a blur so the color bleeds
+  // outward as a halo, then overpaint with the real fill below. The bled-out
+  // ring stays, reading as "this route serves your ticket(s)". Blur radius and
+  // opacity grow with the weight (capped) so overlaps read as a hotter spot.
+  if (ticketWeight > 0) {
+    const w = Math.min(ticketWeight, 4); // cap so a busy hub doesn't blow out
     ctx.save();
     ctx.beginPath();
     ctx.moveTo(c[0].x, c[0].y);
@@ -340,7 +345,8 @@ function drawBox(ctx, box, t, fill, stroke, level, ticketRelevant) {
     ctx.closePath();
     const glow = cssVar('--ticket-glow', '#0f8a9c');
     ctx.shadowColor = glow;
-    ctx.shadowBlur = 10;
+    ctx.shadowBlur = 6 + w * 5;        // 11 at weight 1, hotter as weight rises
+    ctx.globalAlpha = Math.min(1, 0.5 + 0.25 * (w - 1)); // 0.5 → 1.0
     ctx.fillStyle = glow;
     ctx.fill();
     ctx.shadowColor = 'transparent';

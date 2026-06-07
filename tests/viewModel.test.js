@@ -414,6 +414,59 @@ test('ticket-relevant routes: a COMPLETE ticket contributes nothing', () => {
   assert.deepEqual(vm.ticketRouteIds, []);
 });
 
+test('ticket weights: overlapping tickets accumulate (r_bc serves two paths)', () => {
+  // Bob owns r_ac, so A->C is forced onto A-B-C (r_ab + r_bc). Alice holds two
+  // incomplete tickets, t1 (A->C) and t2 (B->C):
+  //   t1 A->C : r_ab + r_bc
+  //   t2 B->C : r_bc (3) vs B-A-C (r_ab 2 + r_ac blocked) -> only r_bc
+  // => r_ab weight 1, r_bc weight 2 (the overlap), r_ac absent.
+  const state = makeState({
+    players: [
+      { id: 0, name: 'Alice', isAI: false, hand: {}, trains: 45, tickets: [{ id: 't1', from: 'A', to: 'C', points: 5 }, { id: 't2', from: 'B', to: 'C', points: 4 }], claimedRoutes: [], score: 0 },
+      { id: 1, name: 'Bob', isAI: true, hand: {}, trains: 45, tickets: [], claimedRoutes: ['r_ac'], score: 0 },
+    ],
+    routeOwner: { r_ac: 1 },
+  });
+  const vm = buildViewModel(state, MAP, CONFIGS, {});
+  assert.deepEqual(vm.ticketRouteWeights, { r_ab: 1, r_bc: 2 });
+  const byId = Object.fromEntries(vm.routes.map((r) => [r.id, r]));
+  assert.equal(byId.r_ab.ticketWeight, 1);
+  assert.equal(byId.r_bc.ticketWeight, 2);
+  assert.equal(byId.r_ac.ticketWeight, 0);
+  // ticketRelevant stays a boolean view over the weight (> 0).
+  assert.equal(byId.r_bc.ticketRelevant, true);
+  assert.equal(byId.r_ac.ticketRelevant, false);
+  assert.deepEqual([...vm.ticketRouteIds].sort(), ['r_ab', 'r_bc']);
+});
+
+test('ticket weights: a COMPLETE ticket adds no weight', () => {
+  // Alice owns r_ac (completes A->C) and holds incomplete t2 (B->C). Only t2
+  // contributes: B->C shortest is r_bc (3) vs B-A-C riding the owned r_ac as a
+  // 0-cost connector (r_ab 2 + r_ac 0 = 2) -> r_ab + r_ac.
+  const state = makeState({
+    players: [
+      { id: 0, name: 'Alice', isAI: false, hand: {}, trains: 43, tickets: [{ id: 't1', from: 'A', to: 'C', points: 5 }, { id: 't2', from: 'B', to: 'C', points: 4 }], claimedRoutes: ['r_ac'], score: 0 },
+      { id: 1, name: 'Bob', isAI: true, hand: {}, trains: 45, tickets: [], claimedRoutes: [], score: 0 },
+    ],
+    routeOwner: { r_ac: 0 },
+  });
+  const vm = buildViewModel(state, MAP, CONFIGS, {});
+  assert.deepEqual(vm.ticketRouteWeights, { r_ab: 1, r_ac: 1 });
+});
+
+test('ticket weights: PRIVACY — empty on an AI turn (never leaks tickets)', () => {
+  const state = makeState({
+    current: 1,
+    players: [
+      { id: 0, name: 'Alice', isAI: false, hand: {}, trains: 45, tickets: [{ id: 't1', from: 'A', to: 'C', points: 5 }], claimedRoutes: [], score: 0 },
+      { id: 1, name: 'Bob', isAI: true, hand: {}, trains: 45, tickets: [{ id: 't1', from: 'A', to: 'C', points: 5 }], claimedRoutes: [], score: 0 },
+    ],
+  });
+  const vm = buildViewModel(state, MAP, CONFIGS, {});
+  assert.deepEqual(vm.ticketRouteWeights, {});
+  assert.equal(vm.routes.every((r) => r.ticketWeight === 0), true);
+});
+
 test('ticket-relevant routes: PRIVACY — empty on an AI turn (never leaks tickets)', () => {
   // It is Bob's (AI) turn. Even though Alice holds a ticket, nothing is exposed.
   const state = makeState({
