@@ -203,6 +203,19 @@ export function drawMap(ctx, map, state, view, highlight) {
   }
   const levels = routeLevels(highlight, claimedRids);
 
+  // Read the published view-model once for: the active human's ticket-relevant
+  // set (privacy-safe — the view-model only populates it for the active human)
+  // and per-route owner display names (so a claimed route can be marked with its
+  // owner's initial). Both are facts already derived in viewModel.js.
+  const vm = liveViewModel();
+  const ticketRids = new Set(
+    vm && Array.isArray(vm.ticketRouteIds) ? vm.ticketRouteIds.map(String) : [],
+  );
+  const vmRoutesById = new Map();
+  if (vm && Array.isArray(vm.routes)) {
+    for (const r of vm.routes) vmRoutesById.set(String(r.id), r);
+  }
+
   // Draw routes.
   for (const rl of layout.routes) {
     const r = rl.route;
@@ -210,6 +223,9 @@ export function drawMap(ctx, map, state, view, highlight) {
     const ownerId = owners.get(rid);
     const claimed = ownerId !== undefined;
     const level = claimed ? 'none' : (levels.get(String(rid)) || 'none');
+    // Highlight only UNCLAIMED ticket routes — what the player still has to
+    // build (a claimed route already reads as owned via its color + mark).
+    const ticketRelevant = !claimed && ticketRids.has(String(rid));
 
     let fill;
     let stroke = 'rgba(0,0,0,0.35)';
@@ -223,7 +239,19 @@ export function drawMap(ctx, map, state, view, highlight) {
     }
 
     for (const box of rl.boxes) {
-      drawBox(ctx, box, t, fill, stroke, level);
+      drawBox(ctx, box, t, fill, stroke, level, ticketRelevant);
+    }
+
+    // Owner indicator: a claimed route gets the owner's colored fill PLUS a
+    // small initialed token on its middle car box, so it unmistakably reads as
+    // "owned by player X" — never confusable with an unclaimed route whose car
+    // boxes merely show the required color.
+    if (claimed && rl.boxes.length) {
+      const ownerIdx = playerIndexOf(state, ownerId);
+      const vmr = vmRoutesById.get(String(rid));
+      const ownerName = vmr && vmr.ownerName != null ? vmr.ownerName : ownerNameFromState(state, ownerIdx);
+      const mid = rl.boxes[Math.floor(rl.boxes.length / 2)];
+      drawOwnerMark(ctx, mid, t, ownerInitial(ownerName, ownerIdx), fill);
     }
   }
 
@@ -247,10 +275,79 @@ export function drawMap(ctx, map, state, view, highlight) {
   }
 }
 
+// The live view-model published on the Observable State Contract (or null).
+function liveViewModel() {
+  try {
+    return (typeof window !== 'undefined' && window.__APP__) ? window.__APP__.viewModel : null;
+  } catch (_) { return null; }
+}
+
+// Fallback owner name when the view-model has none (e.g. a stray render before
+// the first viewModel publish): read the engine player, else "P{n}".
+function ownerNameFromState(state, ownerIdx) {
+  const players = getPlayers(state);
+  const p = players[ownerIdx];
+  if (p && p.name) return p.name;
+  return `P${ownerIdx + 1}`;
+}
+
+// A single-character badge for an owner: their name's initial, else the seat #.
+function ownerInitial(name, ownerIdx) {
+  const s = name != null ? String(name).trim() : '';
+  return s ? s[0].toUpperCase() : String(ownerIdx + 1);
+}
+
+// Draw the owner token: a small light disc ringed in the owner's color, bearing
+// their initial in dark ink — legible on any owner-color fill underneath.
+function drawOwnerMark(ctx, box, t, initial, ownerColor) {
+  const ctr = applyTransform({ x: box.cx, y: box.cy }, t);
+  const radius = 7;
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(ctr.x, ctr.y, radius, 0, Math.PI * 2);
+  ctx.fillStyle = cssVar('--label-plate', '#ffffff');
+  ctx.shadowColor = 'rgba(0,0,0,0.35)';
+  ctx.shadowBlur = 2;
+  ctx.shadowOffsetY = 1;
+  ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = ownerColor;
+  ctx.stroke();
+  ctx.fillStyle = cssVar('--ink', '#1a1a1a');
+  ctx.font = '700 9px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(initial, ctr.x, ctr.y + 0.5);
+  ctx.restore();
+}
+
 // level: 'claimable' (solid, bold — a clear "go"), 'affordable' (dashed amber —
-// "you can pay, just not this instant"), or 'none' (normal).
-function drawBox(ctx, box, t, fill, stroke, level) {
+// "you can pay, just not this instant"), or 'none' (normal). ticketRelevant adds
+// a soft teal halo (orthogonal to level) marking routes that serve the active
+// human's incomplete tickets — "build toward this".
+function drawBox(ctx, box, t, fill, stroke, level, ticketRelevant) {
   const c = box.corners.map((pt) => applyTransform(pt, t));
+
+  // Ticket halo: paint the box once in the glow color WITH a blur so the color
+  // bleeds outward as a halo, then overpaint with the real fill below. The
+  // bled-out ring stays, reading as "this route serves your ticket".
+  if (ticketRelevant) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(c[0].x, c[0].y);
+    for (let i = 1; i < c.length; i++) ctx.lineTo(c[i].x, c[i].y);
+    ctx.closePath();
+    const glow = cssVar('--ticket-glow', '#0f8a9c');
+    ctx.shadowColor = glow;
+    ctx.shadowBlur = 10;
+    ctx.fillStyle = glow;
+    ctx.fill();
+    ctx.shadowColor = 'transparent';
+    ctx.fill();
+    ctx.restore();
+  }
+
   ctx.beginPath();
   ctx.moveTo(c[0].x, c[0].y);
   for (let i = 1; i < c.length; i++) ctx.lineTo(c[i].x, c[i].y);

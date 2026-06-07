@@ -154,6 +154,15 @@ test('hover a route shows its claimability; claim a claimable route', async ({ p
   expect(claimable.length, 'human has at least one claimable route at start').toBeGreaterThan(0);
   const target = claimable.find((r) => r.length === 1) || claimable[0];
 
+  // Ticket-relevant routes are exposed for the active human and mirrored onto
+  // each route as a boolean. The human holds starting tickets, so there is a
+  // path to build toward → the set is non-empty and self-consistent.
+  expect(Array.isArray(vm0.ticketRouteIds), 'ticketRouteIds exposed on the view-model').toBe(true);
+  expect(vm0.ticketRouteIds.length, 'human has at least one ticket-relevant route').toBeGreaterThan(0);
+  const flagged = new Set(vm0.routes.filter((r) => r.ticketRelevant).map((r) => String(r.id)));
+  expect(flagged, 'ticketRouteIds matches per-route ticketRelevant flags')
+    .toEqual(new Set(vm0.ticketRouteIds.map(String)));
+
   // The board exposes a hit-testable on-screen point for the route.
   const center = await page.evaluate((id) => window.__BOARD__.routeCenter(id), target.id);
   expect(center, 'board.routeCenter resolved a point').toBeTruthy();
@@ -172,6 +181,11 @@ test('hover a route shows its claimability; claim a claimable route', async ({ p
   const after = await appState(page);
   const claimedRoute = after.viewModel.routes.find((r) => String(r.id) === String(target.id));
   expect(claimedRoute.claimed, 'target route is now claimed').toBe(true);
+  // Owner styling hook: a claimed route carries its owner index + name so the
+  // renderer can paint the owner-color fill + initialed token (and the board
+  // tooltip can name the owner) — never confusable with a required card color.
+  expect(claimedRoute.ownerIndex, 'claimed route names its owner index (P1)').toBe(0);
+  expect(claimedRoute.ownerName, 'claimed route names its owner').toBeTruthy();
   expect(after.lastAction, 'lastAction recorded').toBeTruthy();
   expect(after.lastAction.type).toBe('CLAIM_ROUTE');
   expect(after.lastAction.by, 'recorded actor is the human (P1)').toBe(0);

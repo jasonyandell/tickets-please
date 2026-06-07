@@ -355,6 +355,80 @@ test('standings: skipped rank after a tie (1,1,3) and uses game-over totals', ()
   assert.equal(vm.standings.filter((s) => s.isLeader).length, 2);
 });
 
+// --- ticket-relevant routes (the active human's "build toward" hint) --------
+
+test('ticket-relevant routes: shortest path for the active human\'s incomplete ticket', () => {
+  // Alice (active human) holds t1 (A->C). Shortest A->C is r_ac(2), not A-B-C(5).
+  const state = makeState({
+    players: [
+      { id: 0, name: 'Alice', isAI: false, hand: { red: 2 }, trains: 45, tickets: [{ id: 't1', from: 'A', to: 'C', points: 5 }], claimedRoutes: [], score: 0 },
+      { id: 1, name: 'Bob', isAI: true, hand: { blue: 1 }, trains: 45, tickets: [], claimedRoutes: [], score: 0 },
+    ],
+  });
+  const vm = buildViewModel(state, MAP, CONFIGS, {});
+  assert.deepEqual(vm.ticketRouteIds, ['r_ac']);
+  const byId = Object.fromEntries(vm.routes.map((r) => [r.id, r]));
+  assert.equal(byId.r_ac.ticketRelevant, true);
+  assert.equal(byId.r_ab.ticketRelevant, false);
+  assert.equal(byId.r_bc.ticketRelevant, false);
+});
+
+test('ticket-relevant routes: an owned route is a free connector (weight 0)', () => {
+  // Alice owns r_ab (A-B). Ticket B->C: the direct r_bc costs 3 cars, but going
+  // B->A (free, already owned) then A->C via r_ac costs only 2 — so the cheapest
+  // build the hint surfaces is r_ac, riding the owned r_ab as a 0-cost connector.
+  const state = makeState({
+    players: [
+      { id: 0, name: 'Alice', isAI: false, hand: {}, trains: 45, tickets: [{ id: 't1', from: 'B', to: 'C', points: 4 }], claimedRoutes: ['r_ab'], score: 0 },
+      { id: 1, name: 'Bob', isAI: true, hand: {}, trains: 45, tickets: [], claimedRoutes: [], score: 0 },
+    ],
+    routeOwner: { r_ab: 0 },
+  });
+  const vm = buildViewModel(state, MAP, CONFIGS, {});
+  assert.deepEqual([...vm.ticketRouteIds].sort(), ['r_ab', 'r_ac']);
+});
+
+test('ticket-relevant routes: an opponent-owned route is impassable', () => {
+  // Bob owns r_ac. Alice's ticket A->C must now route A-B-C (r_ab + r_bc).
+  const state = makeState({
+    players: [
+      { id: 0, name: 'Alice', isAI: false, hand: {}, trains: 45, tickets: [{ id: 't1', from: 'A', to: 'C', points: 5 }], claimedRoutes: [], score: 0 },
+      { id: 1, name: 'Bob', isAI: true, hand: {}, trains: 45, tickets: [], claimedRoutes: ['r_ac'], score: 0 },
+    ],
+    routeOwner: { r_ac: 1 },
+  });
+  const vm = buildViewModel(state, MAP, CONFIGS, {});
+  assert.deepEqual([...vm.ticketRouteIds].sort(), ['r_ab', 'r_bc']);
+});
+
+test('ticket-relevant routes: a COMPLETE ticket contributes nothing', () => {
+  // Alice owns r_ac, which already completes A->C → no build hint needed.
+  const state = makeState({
+    players: [
+      { id: 0, name: 'Alice', isAI: false, hand: {}, trains: 43, tickets: [{ id: 't1', from: 'A', to: 'C', points: 5 }], claimedRoutes: ['r_ac'], score: 0 },
+      { id: 1, name: 'Bob', isAI: true, hand: {}, trains: 45, tickets: [], claimedRoutes: [], score: 0 },
+    ],
+    routeOwner: { r_ac: 0 },
+  });
+  const vm = buildViewModel(state, MAP, CONFIGS, {});
+  assert.deepEqual(vm.ticketRouteIds, []);
+});
+
+test('ticket-relevant routes: PRIVACY — empty on an AI turn (never leaks tickets)', () => {
+  // It is Bob's (AI) turn. Even though Alice holds a ticket, nothing is exposed.
+  const state = makeState({
+    current: 1,
+    players: [
+      { id: 0, name: 'Alice', isAI: false, hand: {}, trains: 45, tickets: [{ id: 't1', from: 'A', to: 'C', points: 5 }], claimedRoutes: [], score: 0 },
+      { id: 1, name: 'Bob', isAI: true, hand: {}, trains: 45, tickets: [{ id: 't1', from: 'A', to: 'C', points: 5 }], claimedRoutes: [], score: 0 },
+    ],
+  });
+  const vm = buildViewModel(state, MAP, CONFIGS, {});
+  assert.equal(vm.secretForIndex, null);
+  assert.deepEqual(vm.ticketRouteIds, []);
+  assert.equal(vm.routes.every((r) => r.ticketRelevant === false), true);
+});
+
 // --- serializability (exposed on window.__APP__ for e2e to read) ------------
 
 test('view-model is plain JSON (round-trips with no loss) in play and game-over', () => {

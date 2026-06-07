@@ -93,6 +93,13 @@
   --card-black: #2b2b2b;
   --card-gray: #c2c8cd;
   --card-wild: #b9bdc2;
+
+  /* --- board clarity (canvas-only, sampled via getComputedStyle) ---
+     Ticket-relevant routes (the active human's "build toward" hint) get a soft
+     teal halo — a hue that collides with no card color or player color, so the
+     highlight never reads as a required card color. The owner-mark plate/ink for
+     a claimed route reuse --label-plate / --ink (already AA-gated above). */
+  --ticket-glow: #0f8a9c;
 }
 
 * { box-sizing: border-box; }

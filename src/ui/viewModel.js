@@ -255,6 +255,18 @@ export function buildViewModel(state, map, configs = [], opts = {}) {
   const secretForIndex = !gameOver && curPlayer && !playerIsAI(curIdx) ? curIdx : null;
   const revealed = (i) => gameOver || i === secretForIndex;
 
+  // --- Ticket-relevant routes (the active human's "build toward" hint) -----
+  // Which routes lie on a shortest path connecting each of the active human's
+  // INCOMPLETE destination tickets, over routes they could still use. PRIVACY:
+  // computed ONLY for the active human (secretForIndex); on AI/opponent turns
+  // the set is empty so no one's tickets ever leak. Each route also carries a
+  // `ticketRelevant` boolean for the renderer.
+  const ticketRids = secretForIndex != null
+    ? ticketRelevantRouteIds(state, players[secretForIndex], map, routeOwner)
+    : new Set();
+  const ticketRouteIds = Array.from(ticketRids);
+  for (const r of routes) r.ticketRelevant = ticketRids.has(String(r.id));
+
   // --- Players ------------------------------------------------------------
   const playerViews = players.map((p, i) => {
     const hand = playerHand(p);
@@ -361,11 +373,116 @@ export function buildViewModel(state, map, configs = [], opts = {}) {
     leaderIndex,
     longestLeaderIndices,
     longestPathMax: maxLongest,
+    ticketRouteIds,
     finalRound,
     finalTurnsLeft,
     scoreboard,
     winnerIndex,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Ticket-relevant route derivation (pure)
+// ---------------------------------------------------------------------------
+
+function sameId(a, b) {
+  return a === b || String(a) === String(b);
+}
+
+/**
+ * Route ids on a shortest path connecting each of `player`'s INCOMPLETE
+ * destination tickets, traversing only routes the player could still use.
+ *
+ * Edge weights model "what would I still have to build":
+ *   - a route the player already owns  -> 0  (a free connector)
+ *   - an unclaimed route               -> its length (cars to lay)
+ *   - a route owned by someone else    -> impassable (skipped)
+ *
+ * Pure + deterministic (ties broken by route/city id). Returns a Set of route
+ * id strings. Callers MUST pass only the active human's player object so this
+ * never reveals an opponent's tickets.
+ *
+ * @returns {Set<string>}
+ */
+export function ticketRelevantRouteIds(state, player, map, routeOwner = (state && state.routeOwner) || {}) {
+  const out = new Set();
+  if (!player) return out;
+  const tickets = Array.isArray(player.tickets) ? player.tickets : [];
+  if (tickets.length === 0) return out;
+  const playerId = player.id != null ? player.id : 0;
+  const owners = routeOwner || {};
+
+  // Build the passable adjacency: city -> [{ to, rid, w }].
+  const adj = new Map();
+  const addEdge = (from, to, rid, w) => {
+    if (!adj.has(from)) adj.set(from, []);
+    adj.get(from).push({ to, rid, w });
+  };
+  for (const r of getRoutes(map)) {
+    const rid = routeIdOf(r);
+    const owner = owners[rid];
+    let w;
+    if (owner == null) w = routeLength(r);          // unclaimed -> cost to build
+    else if (sameId(owner, playerId)) w = 0;        // mine -> free connector
+    else continue;                                  // opponent's -> impassable
+    const a = routeFrom(r);
+    const b = routeTo(r);
+    addEdge(a, b, rid, w);
+    addEdge(b, a, rid, w);
+  }
+
+  for (const t of tickets) {
+    let done = false;
+    try { done = !!ticketComplete(state, playerId, t, map); } catch (_) { done = false; }
+    if (done) continue;
+    for (const rid of shortestPathRouteIds(adj, ticketFrom(t), ticketTo(t))) {
+      out.add(String(rid));
+    }
+  }
+  return out;
+}
+
+// Dijkstra over the weighted adjacency; returns the route ids on one shortest
+// path from source to target ([] if unreachable / same city). Deterministic:
+// among equal-distance options it prefers the lexicographically smaller node /
+// route id so the highlighted set is stable across runs.
+function shortestPathRouteIds(adj, source, target) {
+  if (source == null || target == null || sameId(source, target)) return [];
+  const dist = new Map([[source, 0]]);
+  const prev = new Map(); // node -> { from, rid }
+  const visited = new Set();
+
+  while (true) {
+    let u = null;
+    let ud = Infinity;
+    for (const [node, d] of dist) {
+      if (visited.has(node)) continue;
+      if (d < ud || (d === ud && (u == null || String(node) < String(u)))) { u = node; ud = d; }
+    }
+    if (u == null || sameId(u, target)) break;
+    visited.add(u);
+    for (const e of adj.get(u) || []) {
+      if (visited.has(e.to)) continue;
+      const nd = ud + e.w;
+      const cur = dist.has(e.to) ? dist.get(e.to) : Infinity;
+      if (nd < cur || (nd === cur && prev.has(e.to) && String(e.rid) < String(prev.get(e.to).rid))) {
+        dist.set(e.to, nd);
+        prev.set(e.to, { from: u, rid: e.rid });
+      }
+    }
+  }
+
+  if (!dist.has(target)) return [];
+  const rids = [];
+  let cur = target;
+  const guard = new Set();
+  while (prev.has(cur) && !guard.has(cur)) {
+    guard.add(cur);
+    const p = prev.get(cur);
+    rids.push(p.rid);
+    cur = p.from;
+  }
+  return sameId(cur, source) ? rids : [];
 }
 
 // ---------------------------------------------------------------------------
