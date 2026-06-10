@@ -95,6 +95,8 @@
   --card-gray: #c2c8cd;
   --card-wild: #b9bdc2;
 
+  --track: #aab3a4;          /* continuous rail line under the car slots */
+
   /* --- board clarity ---
      Ticket-relevant routes (the active human's "build toward" hint) get a soft
      teal halo — a hue that collides with no card color or player color, so the
@@ -831,8 +833,24 @@ button.link {
 
 #map text { user-select: none; }
 
-/* --- routes: car slots ----------------------------------------------------- */
+/* --- routes: track line + car slots ---------------------------------------- */
 .route { transform-box: fill-box; transform-origin: center; transform: scale(var(--pop-scale, 1)); }
+
+/* The continuous rail: city to city under the slots; rounded caps tuck under
+   the city markers. A claimed route's rail takes the owner's color, so an
+   owned network reads as one connected line across the board. */
+.route .track {
+  stroke: var(--track);
+  stroke-width: 6;
+  stroke-linecap: round;
+  opacity: 0.8;
+  fill: none;
+}
+.route[data-claimed="true"] .track {
+  stroke: var(--owner-color, var(--card-gray));
+  opacity: 0.9;
+}
+
 .route .car { stroke: rgba(0, 0, 0, 0.35); stroke-width: 1; }
 
 /* Unclaimed fill = the route's required card color. */

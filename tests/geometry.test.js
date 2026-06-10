@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 
 import {
   routeSegments,
+  routeLine,
   computeLayout,
   parallelInfo,
+  parallelOffset,
   fitTransform,
   applyTransform,
   mapBounds,
@@ -207,6 +209,46 @@ test('routeLength is defensive: floor, min 1, len/cost fallbacks', () => {
 test('routeId falls back to from-to when id is missing', () => {
   assert.equal(routeId({ id: 'r1' }), 'r1');
   assert.equal(routeId({ from: 'A', to: 'B' }), 'A-B');
+});
+
+test('routeLine spans city point to city point for a single route', () => {
+  const map = makeMap();
+  const line = routeLine(map.routes[0], map); // A-B, no parallel
+  assert.deepEqual(line, { x1: 0, y1: 0, x2: 100, y2: 0 });
+});
+
+test('routeLine: double routes get symmetric parallel tracks', () => {
+  const map = makeMap();
+  const l1 = routeLine(map.routes.find((r) => r.id === 'B-D#1'), map);
+  const l2 = routeLine(map.routes.find((r) => r.id === 'B-D#2'), map);
+  // B-D is vertical at x=100: offsets are horizontal and symmetric.
+  assert.ok(Math.abs((l1.x1 - 100) + (l2.x1 - 100)) < 1e-9, 'offsets cancel (centered pair)');
+  assert.ok(Math.abs(l1.x1 - l2.x1) >= 14, 'tracks separated at least a slot width');
+  assert.equal(l1.x1, l1.x2, 'each track stays parallel to the route');
+  assert.equal(l1.y1, 0, 'track starts at city B');
+  assert.equal(l1.y2, 100, 'track ends at city D');
+});
+
+test('routeLine and routeSegments share the same offset (slots sit on the track)', () => {
+  const map = makeMap();
+  for (const r of getRoutes(map)) {
+    const line = routeLine(r, map);
+    const boxes = routeSegments(r, map);
+    // Distance from each slot center to the (infinite) track line ~ 0.
+    const dx = line.x2 - line.x1;
+    const dy = line.y2 - line.y1;
+    const len = Math.hypot(dx, dy);
+    for (const box of boxes) {
+      const dist = Math.abs(dy * (box.cx - line.x1) - dx * (box.cy - line.y1)) / len;
+      assert.ok(dist < 1e-9, `${r.id}: slot center on the track (dist ${dist})`);
+    }
+    assert.equal(parallelOffset(r, map), parallelOffset(r, map), 'offset is deterministic');
+  }
+});
+
+test('routeLine returns null when an endpoint city is missing', () => {
+  const map = { cities: [{ id: 'A', x: 0, y: 0 }], routes: [{ id: 'A-Z', from: 'A', to: 'Z', length: 2 }] };
+  assert.equal(routeLine(map.routes[0], map), null);
 });
 
 test('getCities / getRoutes tolerate alternate field names', () => {

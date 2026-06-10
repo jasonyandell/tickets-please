@@ -147,6 +147,46 @@ function len(p) { return Math.hypot(p.x, p.y); }
 function norm(p) { const l = len(p) || 1; return { x: p.x / l, y: p.y / l }; }
 function perp(p) { return { x: -p.y, y: p.x }; }
 
+// Perpendicular offset for a route: 0 for singles; parallels are centered
+// around the city-to-city line (index 0 -> -spacing/2, 1 -> +spacing/2 for 2).
+// The SINGLE source both routeSegments and routeLine use, so the track line
+// and its car slots always share an offset by construction.
+export function parallelOffset(route, map, boxWidth = 14) {
+  const info = parallelInfo(route, map);
+  if (info.count >= 2) {
+    const spacing = boxWidth + 6;
+    return (info.index - (info.count - 1) / 2) * spacing;
+  }
+  return 0;
+}
+
+// ---------------------------------------------------------------------------
+// routeLine — the continuous track under the slots (V1)
+// ---------------------------------------------------------------------------
+
+// The city-to-city track line for a route: endpoints AT the two city points,
+// shifted by the same perpendicular offset as the route's slots (so a double
+// route renders as two clean parallel tracks). The city marker draws on top,
+// so the line visually "plugs into" the city at both ends — this is what makes
+// the network read as connected rail instead of floating slots.
+// Returns { x1, y1, x2, y2 } or null when an endpoint city is missing.
+export function routeLine(route, map, opts = {}) {
+  const idx = opts.cityIndex || cityIndex(map);
+  const a = idx.get(routeFrom(route));
+  const b = idx.get(routeTo(route));
+  if (!a || !b) return null;
+  const A = { x: Number(a.x), y: Number(a.y) };
+  const B = { x: Number(b.x), y: Number(b.y) };
+  const dir = norm(sub(B, A));
+  const p = perp(dir);
+  const boxWidth = opts.boxWidth != null ? opts.boxWidth : 14;
+  const offset = opts.offset != null ? opts.offset : parallelOffset(route, map, boxWidth);
+  const off = scale(p, offset);
+  const s = add(A, off);
+  const e = add(B, off);
+  return { x1: s.x, y1: s.y, x2: e.x, y2: e.y };
+}
+
 // ---------------------------------------------------------------------------
 // routeSegments — the core geometry
 // ---------------------------------------------------------------------------
@@ -179,19 +219,7 @@ export function routeSegments(route, map, opts = {}) {
   const boxWidth = opts.boxWidth != null ? opts.boxWidth : 14;
   const boxGap = opts.boxGap != null ? opts.boxGap : 4;
 
-  // Determine perpendicular offset for parallel routes.
-  let offset = opts.offset;
-  if (offset == null) {
-    const info = parallelInfo(route, map);
-    if (info.count >= 2) {
-      const spacing = boxWidth + 6;
-      // Center the group around the line: index 0 -> -spacing/2, 1 -> +spacing/2 (for 2)
-      offset = (info.index - (info.count - 1) / 2) * spacing;
-    } else {
-      offset = 0;
-    }
-  }
-
+  const offset = opts.offset != null ? opts.offset : parallelOffset(route, map, boxWidth);
   const off = scale(p, offset);
 
   // Lay n slots evenly between A and B, with small margins at the ends so

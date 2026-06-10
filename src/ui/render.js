@@ -29,6 +29,7 @@ import {
   computeLayout,
   fitTransform,
   applyTransform,
+  routeLine,
   getCities,
   getRoutes,
   routeId,
@@ -258,6 +259,14 @@ function buildSkeleton(svg, map) {
       'data-level': 'none',
       'data-ticket-weight': '0',
     }, routesLayer);
+
+    // Continuous track line UNDER the slots (V1): city point to city point,
+    // same perpendicular offset as the slots. Claimed routes recolor it via
+    // CSS (--owner-color), so an owned network reads as connected rail.
+    const line = routeLine(rl.route, vbMap, { cityIndex: layout.cityIndex });
+    if (line) {
+      el('line', { class: 'track', x1: line.x1, y1: line.y1, x2: line.x2, y2: line.y2 }, g);
+    }
 
     const deg = (rad) => (rad * 180) / Math.PI;
     const rectAttrs = (box) => ({
