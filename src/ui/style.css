@@ -10,7 +10,8 @@
 :root {
   /* --- surfaces (light → dark) --- */
   --surface-page: #d9e0d9;     /* app background */
-  --surface-board: #cfd8cf;    /* canvas backdrop */
+  --surface-board: #dde5ec;    /* board backdrop (matches --map-water so the
+                                  viewBox letterbox reads as more ocean) */
   --surface-panel: #f6f7f6;    /* side panel + screen cards */
   --surface-raised: #ffffff;   /* cards, banners, inputs */
   --surface-sunken: #eef3ee;   /* hover / inset wells */
@@ -74,11 +75,12 @@
      The SVG board consumes these via the "SVG board" rules at the end of this
      file; render.js's cssVar() also samples some off :root for JS-side color
      picks and falls back to the literal outside a browser. */
-  --map-land: #e7ecdf;       /* map base fill (vignette center) */
-  --map-land-edge: #dadfca;  /* map fill toward the edges */
-  --map-grid: #d2dbc9;       /* faint cartographic graticule */
-  --city-fill: #2b2f2b;      /* city dot */
-  --city-ring: #ffffff;      /* city dot halo / ring */
+  --map-water: #dde5ec;      /* water around the landmass (vignette center) */
+  --map-water-edge: #cfd9e2; /* water toward the board edges */
+  --map-land: #f5f6f2;       /* landmass fill (near-white transit canvas) */
+  --map-grid: #ccd4da;       /* faint cartographic graticule */
+  --city-fill: #ffffff;      /* metro station dot fill */
+  --city-ring: #2b3440;      /* metro station dot ring */
   --label-plate: #ffffff;    /* city-name plate behind the label */
 
   /* --- train-card palette ---
@@ -95,7 +97,7 @@
   --card-gray: #c2c8cd;
   --card-wild: #b9bdc2;
 
-  --track: #aab3a4;          /* continuous rail line under the car slots */
+  --track: #c2c9cf;          /* continuous rail line under the car slots */
 
   /* --- board clarity ---
      Ticket-relevant routes (the active human's "build toward" hint) get a soft
@@ -800,15 +802,6 @@ button.link {
 }
 /* === end Wave C === */
 
-/* === city icons ===
-   Token for the city skyline markers (SVG .city .win rects below). Keep the
-   literal-hex `--name: #hex;` form — tests/contrast.test.js parses it.
-   Append-only; do NOT fold into the action-bar / Undo / Reload CSS above. */
-:root {
-  --city-window: #e3b505;   /* lit windows on the city skyline marker */
-}
-/* === end city icons === */
-
 /* ============================================================
    SVG board (V0 substrate) — appearance for the element-based
    board renderer (src/ui/render.js). Every visual fact rides on
@@ -821,14 +814,21 @@ button.link {
      --pulse                     → traveling ticket pulse wash
    ============================================================ */
 
-/* Backdrop: vignette gradient stops + faint graticule. */
-#map .vignette-center { stop-color: var(--map-land); }
-#map .vignette-edge { stop-color: var(--map-land-edge); }
+/* Backdrop: water vignette + landmass + faint graticule. The landmass is the
+   cities' convex hull inflated and rounded by a fat same-color stroke. */
+#map .vignette-center { stop-color: var(--map-water); }
+#map .vignette-edge { stop-color: var(--map-water-edge); }
+#map .landmass {
+  fill: var(--map-land);
+  stroke: var(--map-land);
+  stroke-width: 90;
+  stroke-linejoin: round;
+}
 #map .board-grid {
   fill: none;
   stroke: var(--map-grid);
   stroke-width: 1;
-  opacity: 0.55;
+  opacity: 0.4;
 }
 
 #map text { user-select: none; }
@@ -912,22 +912,19 @@ button.link {
   dominant-baseline: central;
 }
 
-/* --- cities: skyline glyph + label plate ----------------------------------- */
+/* --- cities: metro interchange dot + label chip ----------------------------- */
 /* Cities never intercept the pointer: routes stay hoverable/clickable through
-   an overlapping marker, matching the canvas hit-testing behavior. */
-.city { pointer-events: none; filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.3)); }
-.city .bldg {
+   an overlapping marker. */
+.city { pointer-events: none; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.25)); }
+.city .dot {
   fill: var(--city-fill);
   stroke: var(--city-ring);
-  stroke-width: 4;
-  stroke-linejoin: round;
-  paint-order: stroke;
+  stroke-width: 2.5;
 }
-.city .win { fill: var(--city-window); }
 .city .label-plate { fill: var(--label-plate); opacity: 0.92; }
 .city .city-label {
   fill: var(--ink);
-  font: 600 13px var(--font-sans);
+  font: 600 11.5px var(--font-sans);
   dominant-baseline: middle;
 }
 /* === end SVG board === */

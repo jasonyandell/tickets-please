@@ -30,6 +30,7 @@ import {
   fitTransform,
   applyTransform,
   routeLine,
+  convexHull,
   getCities,
   getRoutes,
   routeId,
@@ -181,15 +182,6 @@ function colorKey(color) {
   return CARD_TOKENS[k] ? k : 'gray';
 }
 
-// City skyline glyph: three buildings of varied height with lit windows —
-// [dx, w, h] relative to the city point, sharing a baseline just below it.
-const CITY_BUILDINGS = [
-  [-14, 8, 15],
-  [-5, 10, 22],
-  [6, 8, 18],
-];
-const CITY_BASELINE = 8; // baseline offset below the city point (viewBox units)
-
 // Board skeleton state. One board per page; module scope mirrors the canvas
 // renderer's module-scoped animation state (and keeps the render entry pure-ish:
 // renderBoard only touches the SVG it is given).
@@ -237,6 +229,19 @@ function buildSkeleton(svg, map) {
     width: VIEWBOX.width, height: VIEWBOX.height,
     fill: 'url(#map-vignette)',
   }, svg);
+
+  // Landmass (V2): the convex hull of the cities, inflated + rounded by a fat
+  // same-color stroke (round joins) in CSS. Water (the vignette) shows around
+  // it; derived from the map itself, so any map grounds itself — no geography
+  // assets, no pretending to be an accurate coastline.
+  const hull = convexHull(vbMap.cities);
+  if (hull.length >= 3) {
+    const dLand = hull
+      .map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
+      .join('') + 'Z';
+    el('path', { class: 'landmass', d: dLand }, svg);
+  }
+
   const step = 64;
   let d = '';
   for (let x = step; x < VIEWBOX.width; x += step) d += `M${x} 0V${VIEWBOX.height}`;
@@ -303,37 +308,18 @@ function buildSkeleton(svg, map) {
       'data-city-id': String(c.id),
       transform: `translate(${c.x} ${c.y})`,
     }, citiesLayer);
-    const base = CITY_BASELINE;
-    // Building bodies (paint-order: stroke in CSS gives the white halo).
-    for (const [dx, w, h] of CITY_BUILDINGS) {
-      el('rect', { class: 'bldg', x: dx, y: base - h, width: w, height: h, rx: 2 }, g);
-    }
-    // Lit windows — a small grid of accent squares.
-    const inset = 2;
-    const ww = 2;
-    const gap = 1.8;
-    for (const [dx, w, h] of CITY_BUILDINGS) {
-      const left = dx + inset;
-      const right = dx + w - inset;
-      const cols = w >= 9 ? 2 : 1;
-      for (let fy = base - h + inset + 0.6; fy + ww <= base - inset; fy += ww + gap) {
-        for (let col = 0; col < cols; col++) {
-          const wx = left + col * (ww + gap);
-          if (wx + ww <= right) el('rect', { class: 'win', x: wx, y: fy, width: ww, height: ww }, g);
-        }
-      }
-    }
-    // Label on a rounded plate, clearing the rightmost building edge. Plate
-    // width is estimated from the label length (13px system font ≈ 6.8px/char)
-    // so the build never depends on layout/measure (works while hidden).
-    let edge = -Infinity;
-    for (const [dx, w] of CITY_BUILDINGS) edge = Math.max(edge, dx + w);
+    // Metro interchange dot (V2): a ringed white disc — the transit-map idiom
+    // for a station every line can touch. Replaces the skyline glyphs.
+    el('circle', { class: 'dot', r: 6.5 }, g);
+    // Label on a rounded plate, clearing the dot. Plate width is estimated
+    // from the label length (11.5px system font ≈ 6.2px/char) so the build
+    // never depends on layout/measure (works while hidden).
     const label = String(c.name || '');
     if (label) {
-      const plateX = edge + 5;
-      const plateW = label.length * 6.8 + 9;
-      el('rect', { class: 'label-plate', x: plateX, y: -10, width: plateW, height: 20, rx: 5 }, g);
-      const txt = el('text', { class: 'city-label', x: plateX + 4.5, y: 1 }, g);
+      const plateX = 10;
+      const plateW = label.length * 6.2 + 9;
+      el('rect', { class: 'label-plate', x: plateX, y: -9, width: plateW, height: 18, rx: 5 }, g);
+      const txt = el('text', { class: 'city-label', x: plateX + 4.5, y: 0.5 }, g);
       txt.textContent = label;
     }
   }

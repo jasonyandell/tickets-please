@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   routeSegments,
   routeLine,
+  convexHull,
   computeLayout,
   parallelInfo,
   parallelOffset,
@@ -244,6 +245,38 @@ test('routeLine and routeSegments share the same offset (slots sit on the track)
     }
     assert.equal(parallelOffset(r, map), parallelOffset(r, map), 'offset is deterministic');
   }
+});
+
+test('convexHull contains every input point (no city outside the landmass)', () => {
+  const map = makeMap();
+  const hull = convexHull(map.cities);
+  assert.ok(hull.length >= 3, 'hull is a polygon');
+  // Point-in-convex-polygon: every cross product against the hull edges shares
+  // a sign (boundary counts as inside).
+  for (const c of map.cities) {
+    let sign = 0;
+    let inside = true;
+    for (let i = 0; i < hull.length; i++) {
+      const a = hull[i];
+      const b = hull[(i + 1) % hull.length];
+      const cr = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+      if (cr !== 0) {
+        const s = cr > 0 ? 1 : -1;
+        if (sign === 0) sign = s;
+        else if (s !== sign) { inside = false; break; }
+      }
+    }
+    assert.ok(inside, `city ${c.id} inside the hull`);
+  }
+});
+
+test('convexHull is deterministic and degenerate-safe', () => {
+  const pts = [{ x: 5, y: 5 }, { x: 0, y: 0 }, { x: 10, y: 0 }, { x: 0, y: 10 }, { x: 10, y: 10 }];
+  const h1 = convexHull(pts);
+  const h2 = convexHull(pts.slice().reverse());
+  assert.deepEqual(h1, h2, 'input order does not matter');
+  assert.equal(h1.length, 4, 'interior points are excluded');
+  assert.deepEqual(convexHull([{ x: 0, y: 0 }, { x: 1, y: 1 }]), [], 'fewer than 3 points -> []');
 });
 
 test('routeLine returns null when an endpoint city is missing', () => {

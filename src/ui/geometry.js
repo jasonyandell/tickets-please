@@ -270,6 +270,38 @@ export function computeLayout(map, opts = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// convexHull — the landmass silhouette (V2)
+// ---------------------------------------------------------------------------
+
+// Convex hull of the city points (Andrew's monotone chain), counter-clockwise.
+// The renderer inflates + rounds it into the soft "landmass" under the board —
+// derived from the map itself, so it grounds ANY map without geography assets.
+// Pure + deterministic (sorts by x, then y). Returns [] for fewer than 3 points.
+export function convexHull(points) {
+  const pts = (points || [])
+    .map((p) => ({ x: Number(p.x), y: Number(p.y) }))
+    .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y))
+    .sort((a, b) => a.x - b.x || a.y - b.y);
+  if (pts.length < 3) return [];
+
+  const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const lower = [];
+  for (const p of pts) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+    lower.push(p);
+  }
+  const upper = [];
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const p = pts[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+    upper.push(p);
+  }
+  lower.pop();
+  upper.pop();
+  return lower.concat(upper);
+}
+
+// ---------------------------------------------------------------------------
 // Viewport transform — fit the map bounds into a fixed viewBox rect.
 // ---------------------------------------------------------------------------
 
