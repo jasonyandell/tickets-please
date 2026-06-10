@@ -145,12 +145,12 @@ function buildActionBar({ a, human, isAITurn, gameOver, curName, onDrawDeck, onD
     : isAITurn ? `Waiting for ${curName} to play…`
     : null;
 
-  acts.appendChild(actionBtn('🚂 Draw Deck', 'draw-deck', onDrawDeck, {
+  acts.appendChild(actionBtn('Draw Deck', 'draw-deck', onDrawDeck, {
     disabled: !(human && a.canDrawDeck),
     reason: turnBlock || (a.canDrawDeck ? null : 'The deck and face-up pile are empty'),
   }));
 
-  acts.appendChild(actionBtn('🎫 Draw Tickets', 'draw-tickets', onDrawTickets, {
+  acts.appendChild(actionBtn('Draw Tickets', 'draw-tickets', onDrawTickets, {
     disabled: !(human && a.canDrawTickets),
     reason: turnBlock || drawTicketsReason(a),
   }));
@@ -330,7 +330,7 @@ function buildStandings(standings) {
     if (s.isLeader) row.classList.add('leader');
 
     const mark = el('span', 'standmark');
-    mark.textContent = s.isLeader ? '🥇' : `#${s.rank}`;
+    mark.textContent = s.isLeader ? '★' : `#${s.rank}`;
     row.appendChild(mark);
 
     const dot = el('span', 'swatch');

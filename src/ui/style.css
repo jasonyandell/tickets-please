@@ -9,13 +9,13 @@
    ============================================================ */
 :root {
   /* --- surfaces (light → dark) --- */
-  --surface-page: #d9e0d9;     /* app background */
+  --surface-page: #e2e7ec;     /* app background (cool transit neutral) */
   --surface-board: #dde5ec;    /* board backdrop (matches --map-water so the
                                   viewBox letterbox reads as more ocean) */
-  --surface-panel: #f6f7f6;    /* side panel + screen cards */
+  --surface-panel: #f7f8fa;    /* side panel + screen cards */
   --surface-raised: #ffffff;   /* cards, banners, inputs */
-  --surface-sunken: #eef3ee;   /* hover / inset wells */
-  --surface-overlay: #1e2420;  /* log + pass-device backdrop */
+  --surface-sunken: #eef1f4;   /* hover / inset wells */
+  --surface-overlay: #1d242b;  /* log + pass-device backdrop */
 
   /* --- ink (text on surfaces) --- */
   --ink: #1a1a1a;              /* primary text */
@@ -35,9 +35,9 @@
   --badge-surface: #f3e2c0;   /* longest-route badge fill */
 
   /* --- borders --- */
-  --border: #c4ccc4;          /* card / panel edges */
-  --border-strong: #9aa39a;   /* input / button edges */
-  --divider: #d8ded8;         /* hairline separators */
+  --border: #c9cfd6;          /* card / panel edges */
+  --border-strong: #9aa4ae;   /* input / button edges */
+  --divider: #dde1e6;         /* hairline separators */
   --badge-border: #d8b878;    /* longest-route badge */
 
   /* --- type scale --- */
@@ -340,6 +340,7 @@ button.primary:hover:not(:disabled) { background: linear-gradient(180deg, var(--
   padding: 2px 0;
 }
 .standrow.leader { font-weight: 700; }
+.standrow.leader .standmark { color: var(--warn); }
 .standmark { width: 24px; text-align: center; font-variant-numeric: tabular-nums; }
 .standname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .standpts { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--ink-muted); }
