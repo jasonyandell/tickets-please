@@ -834,7 +834,12 @@ button.link {
 #map text { user-select: none; }
 
 /* --- routes: track line + car slots ---------------------------------------- */
-.route { transform-box: fill-box; transform-origin: center; transform: scale(var(--pop-scale, 1)); }
+/* --lift (claimable) composes with --pop-scale (claim pop) in one transform. */
+.route {
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: scale(calc(var(--pop-scale, 1) * var(--lift, 1)));
+}
 
 /* The continuous rail: city to city under the slots; rounded caps tuck under
    the city markers. A claimed route's rail takes the owner's color, so an
@@ -871,12 +876,29 @@ button.link {
   stroke: rgba(0, 0, 0, 0.55);
 }
 
-/* Levels: a clear "go" vs a dashed "you could pay, just not now". */
-.route[data-level="claimable"] .car { stroke: #111; stroke-width: 3; }
+/* State hierarchy (V3): unclaimed routes sit back slightly; claimable lifts
+   and glows ("go"); affordable dashes ("you could pay, just not now"); the
+   whole network desaturates a touch while the AI is thinking. */
+.route .car { transition: fill 0.15s ease, fill-opacity 0.15s ease; }
+.route:not([data-claimed="true"]) .car { fill-opacity: 0.88; }
+
+.route[data-level="claimable"] {
+  --lift: 1.04;
+  filter: drop-shadow(0 0 5px rgba(17, 17, 17, 0.45));
+}
+.route[data-level="claimable"] .car { stroke: #111; stroke-width: 3; fill-opacity: 1; }
 .route[data-level="affordable"] .car {
   stroke: #c9851a;
   stroke-width: 2.5;
   stroke-dasharray: 5 4;
+}
+
+/* AI turn: saturation dim (NOT opacity) so the teal ticket heat-map stays
+   readable — the human's "build toward" map never blanks while the AI moves. */
+#map[data-turn="ai"] .routes-layer { filter: saturate(0.8); }
+
+@media (prefers-reduced-motion: reduce) {
+  .route .car { transition: none; }
 }
 
 /* Wash overlay: pop flash + traveling pulse (white wash whose opacity is the

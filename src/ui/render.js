@@ -466,6 +466,16 @@ function computePulseSegs(vm) {
 // renderBoard — the per-refresh update pass (attributes only)
 // ---------------------------------------------------------------------------
 
+// Pure level policy (exported for unit tests): which stroke treatment an
+// unclaimed route gets. 'claimable' only on a human's own turn; 'affordable'
+// only when the active human's own hand may show (never leaks an AI hand).
+export function routeLevel(r, humanTurn, showAfford) {
+  if (!r || r.claimed) return 'none';
+  if (r.claimable && humanTurn) return 'claimable';
+  if (r.affordable && showAfford) return 'affordable';
+  return 'none';
+}
+
 // A single-character badge for an owner: their name's initial, else the seat #.
 function ownerInitial(name, ownerIdx) {
   const s = name != null ? String(name).trim() : '';
@@ -487,6 +497,10 @@ export function renderBoard(svg, map, vm) {
 
   const cur = vm.players && vm.players[vm.currentPlayerIndex];
   const humanTurn = !!(cur && !cur.isAI);
+  // Board-level turn flag (V3): CSS dims the network during AI turns and
+  // releases it at game over. The heat-map stays readable (saturation dim,
+  // not opacity) — the Batch-9 "never blank the human's map" rule holds.
+  svg.dataset.turn = vm.scoreboard ? 'over' : (humanTurn ? 'human' : 'ai');
   // Affordable styling is shown ONLY on the active human's own view (never
   // leaks an AI/opponent hand) — same rule the canvas renderer enforced.
   const showAfford = vm.secretForIndex != null && vm.secretForIndex === vm.currentPlayerIndex;
@@ -506,11 +520,7 @@ export function renderBoard(svg, map, vm) {
       g.style.removeProperty('--owner-color');
     }
 
-    const level = r.claimed ? 'none'
-      : (r.claimable && humanTurn) ? 'claimable'
-      : (r.affordable && showAfford) ? 'affordable'
-      : 'none';
-    g.dataset.level = level;
+    g.dataset.level = routeLevel(r, humanTurn, showAfford);
 
     // Heat only on routes still to be built (a claimed route reads as owned).
     const weight = r.claimed ? 0 : Math.min(r.ticketWeight || 0, 4);
