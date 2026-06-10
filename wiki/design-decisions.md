@@ -37,6 +37,16 @@ assertions on real DOM nodes (no pixel sampling, no hit-testing geometry), and
 eliminating the hidden-canvas blank-board race entirely. **Screenshots are for
 human taste, never gates.**
 
+## Dim with saturation, never blank the heat-map
+When the board needs to recede (AI turns), it desaturates
+(`#map[data-turn="ai"] .routes-layer { filter: saturate(0.8) }`) — **never**
+drops opacity. The human's teal ticket heat-map is the "where to build" plan
+and must stay readable at all times; an opacity dim would blank it exactly when
+the human is watching the AI move (the common 1-human-vs-AI case). Same
+principle as the Batch-9 viewer rule: the human's own map never blanks. The
+flag→treatment policy itself is pure and unit-tested
+(`src/ui/render.js:routeLevel`). See [[ui]].
+
 ## Built with workflows
 Per the brief, much of the implementation is produced by orchestrated agents
 working against `CONTRACT.md`, then adversarially verified. See [[workflows]].

@@ -349,3 +349,54 @@ layout.test.js; structural SVG e2e hooks; cities.spec skyline → metro dots),
 run test:e2e` coordinator-observed: **13/13** (~6.3s).
 **Lint:** no orphan pages, no dangling `[[links]]` (only the intentional literal
 examples in [[CLAUDE]]), every page reachable from [[index]].
+
+### 2026-06-10 — Overhaul V3: state hierarchy · commit `afd2126`
+The board tells you what matters. Pure **`routeLevel(r, humanTurn, showAfford)`**
+extracted + exported from `render.js` and unit-tested directly (new
+`tests/boardLevel.test.js`, 5 tests: AI turns never show a go signal; masked
+hands never leak `affordable`; claimed = no level; claimable outranks
+affordable; null-safe). CSS hierarchy: unclaimed slots sit back
+(`fill-opacity .88`); claimable lifts +4% (`--lift: 1.04` composing with
+`--pop-scale` in one transform) and glows; `renderBoard` sets
+`#map dataset.turn` (`human|ai|over`) and `#map[data-turn="ai"]` desaturates
+the routes layer — **saturation, not opacity**, so the teal heat-map never
+blanks (the Batch-9 rule holds; now a [[design-decisions]] entry).
+Reduced-motion disables the fill transition.
+**Counts (observed before commit):** 214/214 unit, 13/13 e2e (6.6s).
+→ [[ui]], [[testing]], [[design-decisions]].
+
+### 2026-06-10 — Overhaul V4: chrome · commit `32eb377`
+Board and chrome share one visual language. Surfaces/borders retuned from
+greenish to **cool transit neutrals** (page/panel/sunken/overlay + the
+`--border`/`--border-strong`/`--divider` trio). **Emoji dropped** from Draw
+Deck / Draw Tickets (text-only); the standings leader mark 🥇 → a gold **★**
+(`var(--warn)`). The 🚂 wordmark stays — that's brand. All retuned (text,
+background) pairs re-gated by the contrast suite (32, unchanged).
+**Counts (observed before commit):** 214/214 unit, 13/13 e2e (6.3s).
+→ [[ui]], [[testing]].
+
+### 2026-06-10 — Overhaul V0–V4 complete (retrospective)
+The full canvas → SVG/DOM substrate overhaul shipped as five gated batches in
+one day: `136a6b8` (V0 SVG substrate), `5c24416` (V1 track lines), `2c9840d`
+(V2 transit theme), `afd2126` (V3 state hierarchy), `32eb377` (V4 chrome).
+Every batch passed the same ritual before commit: unit + e2e observed green,
+screenshots eyeballed, CI deploy verified, live site confirmed. The e2e suite
+stayed at **13 scenarios** throughout but got **stronger** — structural SVG
+assertions (real elements + attributes) replaced the canvas smoke checks.
+Final counts: **214 unit / 13 e2e (~6.3s)**. The gate never broke across the
+entire rewrite: a total visual overhaul rode on the verifiable spine (pure
+view-model → projection, contract-based e2e) without a single regression
+escaping to main — the thesis held.
+
+### 2026-06-10 — Wiki sweep #4 (lint)
+Reconciled wiki to Overhaul V3–V4 + added the retrospective above. Pages
+changed: [[ui]] (board details extended V0→V4: state-hierarchy + chrome
+sections; boardLevel test listed), [[testing]] (209→**214** unit;
+`boardLevel.test.js` entry; corrected `geometry.test.js` 19→**21** — sweep #3
+recorded a stale count; the real file has 21: 15 V0 + 4 V1 + 2 V2),
+[[design-decisions]] ("dim with saturation, never blank the heat-map" added),
+[[log]] (V3/V4/retrospective entries).
+**Counts re-run:** `npm test` → **214/214** (~2.4s wall time, observed);
+per-file counts verified by running each suite (they sum to 214).
+**Lint:** no orphan pages, no dangling `[[links]]` (only the intentional literal
+examples in [[CLAUDE]]), every page reachable from [[index]].

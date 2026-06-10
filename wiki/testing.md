@@ -6,7 +6,7 @@ is verified through a **deterministic state contract** — never by sampling
 pixels. Unit tests use Node's built-in runner — **zero dependencies**:
 
 ```
-npm test           # node --test over tests/*.test.js   (209 tests, ~2.5s)
+npm test           # node --test over tests/*.test.js   (214 tests, ~2.5s)
 npm run test:e2e   # Playwright contract play-throughs   (13 tests, ~6.3s, dev-only)
 npm run validate   # check the map against its invariants
 node tools/simulate.js [games] [seed]   # play full AI-vs-AI games
@@ -16,7 +16,7 @@ node tools/simulate.js [games] [seed]   # play full AI-vs-AI games
 > so the script globs `tests/*.test.js` explicitly (a shell glob, so CI on Node
 > 20 works too — see [[log]] 2026-05-30 deploy corrections).
 
-## Unit suites (209 tests total)
+## Unit suites (214 tests total)
 - **`scoring.test.js`** (13) — route points, ticket completion, longest path,
   `finalScores` incl. longest-path ties. See [[scoring]].
 - **`rules.test.js`** (34) — `canClaimRoute` (colored/gray/wild, trains, double
@@ -26,7 +26,7 @@ node tools/simulate.js [games] [seed]   # play full AI-vs-AI games
   ticket flow, end-game trigger and winner, no-mutation, determinism.
 - **`ai.test.js`** (8) — the bot always returns a legal move, resolves tickets,
   claims usefully, is deterministic. See [[ai]].
-- **`geometry.test.js`** (19) — pure UI geometry (`geometry.js`): slot counts +
+- **`geometry.test.js`** (21) — pure UI geometry (`geometry.js`): slot counts +
   placement, double-route offsets (symmetric; `parallelOffset` used as single
   source by both slots and track line), `routeLine` endpoints at cities, missing-
   city null, `convexHull` (every city inside; deterministic + degenerate-safe).
@@ -41,6 +41,12 @@ node tools/simulate.js [games] [seed]   # play full AI-vs-AI games
   ticket paths** (`ticketOrderedPaths`, a subset of the weight set, same Dijkstra)
   that drive the traveling pulse, no-mutation, and a JSON round-trip (the
   view-model is plain data). See [[ui]].
+- **`boardLevel.test.js`** (5) — the **pure board level policy**
+  (`src/ui/render.js:routeLevel`) behind `.route[data-level]`: claimable only on
+  a human turn (an AI turn never shows a go signal), affordable only when the
+  active human's own hand may show (masked hands never leak), claimed routes
+  carry no level, claimable outranks affordable, null-safe. `render.js` is
+  import-safe under Node, so the policy unit-tests with no browser. See [[ui]].
 - **`history.test.js`** (9) — the **undo/redo recorder/player** (`history.js`):
   state as a pure replay of the tape prefix, undo skipping AI to the previous
   human action, redo, and branch-on-new-action (truncate at the cursor). See

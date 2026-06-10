@@ -96,7 +96,7 @@ over `<section data-screen>` elements — one per screen
   (`convexHull`), the viewport transform (`fitTransform`/`applyTransform`), and
   all defensive map accessors (`getCities`/`getRoutes`/`cityId`/`routeId`/…). No
   DOM; no hit-testing (clicks land on real SVG nodes). Fully unit-testable under
-  Node (tests/geometry.test.js, 19 tests).
+  Node (tests/geometry.test.js, 21 tests).
 - `anim.js` — the **verification-first animation kit** (see *How we test
   animations* below): a PURE, timer-free frame model (`frame`/`pulse`/`popParams`
   for the claimed-route pop; `pulseCenter`/`bump`/`pulseIntensityAt` for the
@@ -121,7 +121,7 @@ over `<section data-screen>` elements — one per screen
   locomotive** card is a distinctive multicolor **rainbow chip** (`.card.wild`,
   `.pip.wild`), never a flat gray — so it always reads as "any color".
 
-## Board details (V0 → V1 → V2)
+## Board details (V0 → V4)
 
 ### V0 — SVG substrate (Overhaul V0, 2026-06-10)
 The canvas renderer was replaced by a pure SVG projection. Every route, car
@@ -157,6 +157,34 @@ The board reads as a metro map:
 - **Label chips**: city names sit on a rounded plate (`rect.label-plate`) beside
   the dot, clearing it cleanly.
 - Cooler track/grid tones, removed the now-unused `--city-window` token.
+
+### V3 — State hierarchy (Overhaul V3, 2026-06-10)
+The board tells you what matters right now:
+- **Pure level policy**: `src/ui/render.js:routeLevel(r, humanTurn, showAfford)`
+  is exported and unit-tested directly (`tests/boardLevel.test.js`, 5 tests) —
+  AI turns never show a "go" signal, masked hands never leak `affordable`, a
+  claimed route never carries a level, claimable outranks affordable. The
+  function feeds each route's `data-level` attribute.
+- **CSS hierarchy**: unclaimed slots sit back (`fill-opacity: .88`); a
+  claimable route **lifts +4%** (`--lift: 1.04`, composing with `--pop-scale`
+  in one transform: `scale(calc(var(--pop-scale,1) * var(--lift,1)))`) and
+  glows via drop-shadow; affordable keeps its dashed amber stroke.
+- **AI-turn dim**: `renderBoard` sets `#map dataset.turn`
+  (`human | ai | over`); `#map[data-turn="ai"] .routes-layer` applies
+  `filter: saturate(0.8)` — **saturation, NOT opacity**, so the teal ticket
+  heat-map stays readable while the AI moves (the Batch-9 "never blank the
+  human's map" rule holds).
+- Reduced-motion disables the fill transition.
+
+### V4 — Chrome (Overhaul V4, 2026-06-10)
+Board and chrome share one visual language:
+- **Cool transit neutrals**: page/panel/sunken/overlay surfaces and the border
+  trio (`--border`/`--border-strong`/`--divider`) retuned from greenish to the
+  cool-neutral family matching the board's water tones.
+- **Emoji-free buttons**: Draw Deck / Draw Tickets are text-only; the standings
+  leader mark is a gold **★** (`var(--warn)`) instead of 🥇. The 🚂 wordmark
+  stays — that's brand.
+- All retuned (text, background) pairs re-gated by the contrast suite.
 
 > **Known deferred issue (battery-only nit):** the pulse rAF driver does not
 > stop when the player navigates to the menu mid-game. It will stop on a fresh
@@ -304,10 +332,14 @@ Pure unit tests are the primary gate (see [[testing]]):
   heat-map (overlap accumulates; lit for the lone human even on an AI turn; null
   for the inactive hotseat human), the ordered source→dest ticket paths, no
   mutation, JSON round-trip.
-- `tests/geometry.test.js` (19) — the **pure geometry** (`geometry.js`): slot
+- `tests/geometry.test.js` (21) — the **pure geometry** (`geometry.js`): slot
   counts/placement, double-route offsets (symmetric; slots provably on the track
   line), `routeLine` endpoints at cities, `convexHull` (every city inside;
   deterministic + degenerate-safe). Replaces the old `layout.test.js` (11 tests).
+- `tests/boardLevel.test.js` (5) — the **pure level policy**
+  (`render.js:routeLevel`): claimable only on a human turn (AI turns never show
+  a go signal), affordable only when the active human's hand may show (no
+  leak), claimed = no level, claimable outranks affordable, null-safe.
 - `tests/history.test.js` (9) — the **undo/redo recorder**: replay-of-prefix,
   undo skips AI to the previous human action, redo, and branch-on-new-action.
 - `tests/anim.test.js` (22) — the **pure frame model** (frame/pulse/pop +
