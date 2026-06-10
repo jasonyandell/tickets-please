@@ -1,31 +1,24 @@
-// board.js — canvas INTERACTION + route-clarity layer for tickets-please.
+// board.js — board INTERACTION + route-clarity layer for tickets-please.
 //
 // This module makes the map self-explanatory: hover (or tap) any route and a
 // tooltip near the cursor shows its cost, whether you can claim it, and — when
 // you can't — exactly why. It reads FACTS from the Observable State Contract
 // (window.__APP__.viewModel.routes: { id, from, to, length, color, cost,
-// claimable, affordable, reason, claimed, ownerName }) and the live geometry the
-// renderer pushes via setBoardRenderContext(). It imports ONLY pure helpers from
-// layout.js — never render.js or main.js — so there is no import cycle and no
-// engine coupling.
+// claimable, affordable, reason, claimed, ownerName }).
 //
-// Division of labour with main.js (which owns the engine): claiming a claimable
-// route is still applied by main.js's existing canvas click handler. This layer
-// adds the human-facing clarity on top — the hover tooltip, the distinct
-// claimable-vs-affordable read, and the INLINE blocked reason near the cursor so
-// a player never has to read the log to learn why a route is unavailable.
-
-import {
-  invertTransform,
-  applyTransform,
-  hitTestRoute,
-} from '../layout.js';
-
-// Latest geometry pushed by the renderer each frame.
-let RC = null;
+// SVG era: routes are real elements (g.route[data-route-id] under #map), so
+// "which route is under the cursor" is just event.target.closest() — the old
+// canvas hit-testing (transform inversion + point-in-polygon) is gone, and
+// this module needs NO geometry pushed from the renderer.
+//
+// Division of labour with main.js (which owns the engine): claiming a
+// claimable route is still applied by main.js's click handler. This layer adds
+// the human-facing clarity on top — the hover tooltip, the distinct
+// claimable-vs-affordable read, and the INLINE blocked reason near the cursor
+// so a player never has to read the log to learn why a route is unavailable.
 
 // DOM handles, resolved once on mount.
-let canvasEl = null;
+let svgEl = null;
 let boardEl = null;
 let tipEl = null;
 
@@ -39,56 +32,46 @@ let pinTimer = null;
 const BOARD = { tooltip: null, routeAt, routeCenter };
 if (typeof window !== 'undefined') window.__BOARD__ = BOARD;
 
-// Called by render.js after every paint. Pure data in; no work here.
-export function setBoardRenderContext(rc) {
-  RC = rc;
-}
-
 // ---------------------------------------------------------------------------
-// Coordinate helpers — CSS pixels (relative to the canvas) <-> world units.
-// The renderer's transform fits the map into canvas.width/height (device px),
-// so we bridge through the canvas's CSS size.
+// Route lookup — straight off the DOM (real elements, real boxes)
 // ---------------------------------------------------------------------------
 
-function cssToDeviceScale() {
-  if (!canvasEl) return 1;
-  const cw = canvasEl.clientWidth || canvasEl.width;
-  return cw ? canvasEl.width / cw : 1;
+function routeIdFromTarget(target) {
+  if (!target || typeof target.closest !== 'function') return null;
+  const g = target.closest('[data-route-id]');
+  return g ? g.getAttribute('data-route-id') : null;
 }
 
-function clientToWorld(clientX, clientY) {
-  if (!RC || !canvasEl) return null;
-  const rect = canvasEl.getBoundingClientRect();
-  const sx = rect.width ? canvasEl.width / rect.width : 1;
-  const sy = rect.height ? canvasEl.height / rect.height : 1;
-  const device = { x: (clientX - rect.left) * sx, y: (clientY - rect.top) * sy };
-  return invertTransform(device, RC.transform);
-}
-
-// CSS-pixel point on a route relative to the canvas. Uses the route's middle
-// car box (always a real, hit-testable box — never a gap between boxes), so the
-// returned point is guaranteed to land on the route for hover/click.
+// CSS-pixel point on a route relative to #map. Uses the route's middle car
+// slot (always a real element — never a gap between slots), so the returned
+// point is guaranteed to land on the route for hover/click.
 function routeCenter(id) {
-  if (!RC) return null;
-  const rl = RC.layout.routes.find((r) => String(r.id) === String(id));
-  if (!rl || !rl.boxes || rl.boxes.length === 0) return null;
-  const box = rl.boxes[Math.floor(rl.boxes.length / 2)];
-  const device = applyTransform({ x: box.cx, y: box.cy }, RC.transform);
-  const s = cssToDeviceScale() || 1;
-  return { x: device.x / s, y: device.y / s };
+  if (!svgEl) return null;
+  const g = svgEl.querySelector(`[data-route-id="${cssEscape(String(id))}"]`);
+  if (!g) return null;
+  const cars = g.querySelectorAll('.car');
+  if (!cars.length) return null;
+  const mid = cars[Math.floor(cars.length / 2)];
+  const r = mid.getBoundingClientRect();
+  const s = svgEl.getBoundingClientRect();
+  return { x: r.left + r.width / 2 - s.left, y: r.top + r.height / 2 - s.top };
 }
 
-// Route id under a CSS-pixel point relative to the canvas (null if none).
+// Route id under a CSS-pixel point relative to #map (null if none).
 function routeAt(cssX, cssY) {
-  if (!RC || !canvasEl) return null;
-  const rect = canvasEl.getBoundingClientRect();
-  return routeAtClient(rect.left + cssX, rect.top + cssY);
+  if (!svgEl || typeof document === 'undefined' || !document.elementsFromPoint) return null;
+  const s = svgEl.getBoundingClientRect();
+  const els = document.elementsFromPoint(s.left + cssX, s.top + cssY);
+  for (const e of els) {
+    const id = routeIdFromTarget(e);
+    if (id != null) return id;
+  }
+  return null;
 }
 
-function routeAtClient(clientX, clientY) {
-  const world = clientToWorld(clientX, clientY);
-  if (!world) return null;
-  return hitTestRoute(world, RC.map, RC.layout);
+function cssEscape(s) {
+  if (typeof CSS !== 'undefined' && CSS.escape) return CSS.escape(s);
+  return s.replace(/["\\]/g, '\\$&');
 }
 
 // ---------------------------------------------------------------------------
@@ -107,10 +90,12 @@ function routeVM(id) {
   return vm.routes.find((r) => String(r.id) === String(id)) || null;
 }
 
-function cityName(id) {
-  if (!RC) return String(id);
-  const c = RC.layout.cities.find((x) => String(x.id) === String(id));
-  return c && c.name ? c.name : String(id);
+function cityLabel(id) {
+  if (svgEl) {
+    const g = svgEl.querySelector(`.city[data-city-id="${cssEscape(String(id))}"] .city-label`);
+    if (g && g.textContent) return g.textContent;
+  }
+  return String(id);
 }
 
 // Format the engine spend object ({ color: count, ... }) as e.g. "2 yellow + 1 wild".
@@ -142,7 +127,7 @@ function statusFor(r) {
 }
 
 function buildTip(r) {
-  const title = `${cityName(r.from)} → ${cityName(r.to)}`;
+  const title = `${cityLabel(r.from)} → ${cityLabel(r.to)}`;
   const colorLabel = r.color && !/^(gray|grey|any)$/i.test(String(r.color))
     ? String(r.color)
     : 'any color';
@@ -214,14 +199,14 @@ function hideTip() {
 // ---------------------------------------------------------------------------
 
 function localXY(ev) {
-  const rect = canvasEl.getBoundingClientRect();
+  const rect = svgEl.getBoundingClientRect();
   return { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
 }
 
 function onMove(ev) {
-  if (!RC) return;
+  if (!svgEl) return;
   clearPin();
-  const id = routeAtClient(ev.clientX, ev.clientY);
+  const id = routeIdFromTarget(ev.target);
   if (id == null) { hideTip(); return; }
   const { x, y } = localXY(ev);
   showTip(id, x, y, false);
@@ -237,8 +222,8 @@ function onLeave() {
 // learns "why not" without reading the log). On a claimable click we clear the
 // tooltip and let the claim land.
 function onClick(ev) {
-  if (!RC) return;
-  const id = routeAtClient(ev.clientX, ev.clientY);
+  if (!svgEl) return;
+  const id = routeIdFromTarget(ev.target);
   if (id == null) { hideTip(); return; }
   const r = routeVM(id);
   if (!r) { hideTip(); return; }
@@ -257,9 +242,9 @@ function clearPin() {
 // ---------------------------------------------------------------------------
 
 function mount() {
-  canvasEl = document.getElementById('map');
+  svgEl = document.getElementById('map');
   boardEl = document.getElementById('board');
-  if (!canvasEl || !boardEl) return;
+  if (!svgEl || !boardEl) return;
 
   tipEl = document.createElement('div');
   tipEl.id = 'route-tip';
@@ -267,18 +252,24 @@ function mount() {
   tipEl.setAttribute('role', 'status');
   boardEl.appendChild(tipEl);
 
-  canvasEl.addEventListener('mousemove', onMove);
-  canvasEl.addEventListener('mouseleave', onLeave);
+  svgEl.addEventListener('mousemove', onMove);
+  svgEl.addEventListener('mouseleave', onLeave);
   // Capture phase so the reason pins even though main.js also listens for clicks.
-  canvasEl.addEventListener('click', onClick, true);
+  svgEl.addEventListener('click', onClick, true);
 
   // Touch: a tap shows the tooltip; main.js's click handles the claim.
-  canvasEl.addEventListener('touchstart', (ev) => {
+  svgEl.addEventListener('touchstart', (ev) => {
     const t = ev.touches && ev.touches[0];
     if (!t) return;
-    const id = routeAtClient(t.clientX, t.clientY);
+    let id = null;
+    if (typeof document !== 'undefined' && document.elementsFromPoint) {
+      for (const e of document.elementsFromPoint(t.clientX, t.clientY)) {
+        id = routeIdFromTarget(e);
+        if (id != null) break;
+      }
+    }
     if (id == null) { hideTip(); return; }
-    const rect = canvasEl.getBoundingClientRect();
+    const rect = svgEl.getBoundingClientRect();
     showTip(id, t.clientX - rect.left, t.clientY - rect.top, true);
   }, { passive: true });
 }

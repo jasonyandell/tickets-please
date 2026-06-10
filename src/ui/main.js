@@ -1,7 +1,7 @@
 // main.js — UI controller for tickets-please.
 //
-// Wires the engine (state/actions/rules/game/scoring), the AI, and the canvas
-// renderer together. Zero external dependencies; ES module.
+// Wires the engine (state/actions/rules/game/scoring), the AI, and the SVG
+// board renderer together. Zero external dependencies; ES module.
 //
 // It reads engine state defensively because the exact internal field names of
 // State/Map are owned by other files; only the function signatures in
@@ -28,19 +28,14 @@ import { finalScores, ticketComplete } from '../engine/scoring.js';
 import { chooseAction } from '../ai/ai.js';
 
 import {
-  computeLayout,
-  fitTransform,
-  invertTransform,
-  hitTestRoute,
   getRoutes,
   routeId as routeIdOf,
   routeFrom,
   routeTo,
   routeLength,
-  routeColor,
-} from './layout.js';
+} from './geometry.js';
 import {
-  drawMap,
+  renderBoard,
   getPlayers,
   playerIndexOf,
 } from './render.js';
@@ -60,6 +55,9 @@ import { renderSetup } from './screens/setup.js';
 import { renderGameOver } from './screens/gameover.js';
 import { showPassDevice, hidePassDevice } from './screens/passdevice.js';
 import { renderPanel } from './game/panel.js';
+// Side-effect import: the board interaction layer (hover tooltip + the
+// window.__BOARD__ e2e surface) mounts itself on DOMContentLoaded.
+import './game/board.js';
 
 // Try to import a default map; the engine map module may export it under a few
 // names. We resolve lazily so a missing export does not break module loading.
@@ -72,8 +70,7 @@ import * as MapModule from '../engine/map.js';
 const AI_DELAY_MS = 550;
 
 const ui = {
-  canvas: null,
-  ctx: null,
+  board: null,   // the #map SVG element
   panel: null,
   log: null,
 };
@@ -85,8 +82,6 @@ let G = {
   map: null,
   state: null,
   seed: null,          // game seed (the save's recipe is seed + recorded actions)
-  layout: null,
-  transform: null,
   playerConfigs: [],   // [{ name, isAI }]
   logLines: [],
   aiTimer: null,
@@ -359,7 +354,6 @@ function tryRestore() {
     state: restored.state,
     seed: save.seed,
     playerConfigs: save.playerConfigs,
-    layout: computeLayout(map),
     logLines: ['Restored your game from this device.'],
     gameOver: false,
     winner: null,
@@ -367,9 +361,7 @@ function tryRestore() {
     history: restored.history,
   };
 
-  // Show the game screen first so the canvas has a real layout box, then paint.
   if (router) router.show('game');
-  resize();
   refresh();
 
   if (isGameOver(G.state)) {
@@ -390,7 +382,8 @@ function claimableRouteIds(state) {
     const moves = legalMoves(state, G.map) || [];
     for (const m of moves) {
       if (m && m.type === CLAIM_ROUTE && (m.routeId != null)) {
-        ids.add(m.routeId);
+        // String keys: clicks read the id back off data-route-id (a string).
+        ids.add(String(m.routeId));
       }
     }
   } catch (_) { /* ignore */ }
@@ -530,19 +523,16 @@ function describeAction(action, idx) {
 // Human interactions
 // ---------------------------------------------------------------------------
 
-function onCanvasClick(ev) {
+function onBoardClick(ev) {
   if (G.gameOver) return;
   const idx = currentPlayerIndex(G.state);
   if (playerIsAI(idx)) return; // not your turn
 
-  const rect = ui.canvas.getBoundingClientRect();
-  const screen = {
-    x: (ev.clientX - rect.left) * (ui.canvas.width / rect.width),
-    y: (ev.clientY - rect.top) * (ui.canvas.height / rect.height),
-  };
-  const world = invertTransform(screen, G.transform);
-
-  const hitRoute = hitTestRoute(world, G.map, G.layout);
+  // Routes are real SVG elements: the clicked node names its own route.
+  const g = ev.target && typeof ev.target.closest === 'function'
+    ? ev.target.closest('[data-route-id]')
+    : null;
+  const hitRoute = g ? g.getAttribute('data-route-id') : null;
   if (hitRoute != null) {
     const claimable = claimableRouteIds(G.state);
     if (!claimable.has(hitRoute)) {
@@ -694,7 +684,6 @@ function newGame(numPlayers, configs, seed) {
     state,
     seed: gameSeed,
     playerConfigs,
-    layout: computeLayout(map),
     logLines: [`New game: ${numPlayers} players (seed ${gameSeed}).`],
     gameOver: false,
     winner: null,
@@ -706,7 +695,6 @@ function newGame(numPlayers, configs, seed) {
   // Overwrite any prior save so "New Game" replaces the persisted game — a reload
   // now restores THIS game, not the one we just left.
   saveGame();
-  resize();
   refresh();
   scheduleAIIfNeeded();
 }
@@ -792,7 +780,7 @@ function refresh() {
   G.viewModel = vm;
   setViewModel(vm);
 
-  renderCanvas();
+  renderGameBoard();
   renderPanel(ui.panel, buildPanelCtx(vm));
 }
 
@@ -831,49 +819,21 @@ function buildPanelCtx(viewModel) {
   };
 }
 
-function renderCanvas() {
-  if (!ui.ctx || !G.map) return;
-  // Only paint when the game screen is actually visible; a hidden canvas has no
-  // layout box, so sizing/painting it would be a no-op (and the source of the
-  // old "blank board" race). When hidden we skip and repaint on screen entry.
-  if (ui.canvas.offsetParent === null) return;
-  const highlight = (!G.gameOver && !playerIsAI(currentPlayerIndex(G.state)))
-    ? claimableRouteIds(G.state)
-    : new Set();
-  drawMap(ui.ctx, G.map, G.state, {
-    width: ui.canvas.width,
-    height: ui.canvas.height,
-    transform: G.transform,
-    layout: G.layout,
-  }, highlight);
+function renderGameBoard() {
+  if (!ui.board || !G.map) return;
+  // SVG lays out in fixed viewBox units, so it renders correctly even while
+  // its screen section is hidden — the old canvas "blank board" sizing race
+  // is structurally impossible now. Always paint; the view-model is the
+  // single source (claimable/owner/heat all live on it).
+  renderBoard(ui.board, G.map, G.viewModel);
 }
 
 // (The endgame scoreboard now lives in screens/gameover.js; main.js just calls
 // renderGameOver() from endGame() with the view-model + screen-transition hooks.)
 
-// ---------------------------------------------------------------------------
-// Sizing
-// ---------------------------------------------------------------------------
-
-function resize() {
-  if (!ui.canvas) return;
-  // A hidden canvas (any non-game screen) has a zero-size layout box; sizing it
-  // then would collapse the board. Skip until the game screen is visible — the
-  // game screen's onShow re-runs resize() so the first paint happens on entry.
-  if (ui.canvas.offsetParent === null) return;
-  const parent = ui.canvas.parentElement;
-  const w = Math.max(parent ? parent.clientWidth : 800, 320);
-  const h = Math.max(parent ? parent.clientHeight : 600, 320);
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  ui.canvas.width = Math.floor(w * dpr);
-  ui.canvas.height = Math.floor(h * dpr);
-  ui.canvas.style.width = w + 'px';
-  ui.canvas.style.height = h + 'px';
-  if (G.map) {
-    G.transform = fitTransform(G.map, ui.canvas.width, ui.canvas.height, 50);
-    renderCanvas();
-  }
-}
+// (No sizing code: the SVG board scales itself via its fixed viewBox. The
+// canvas-era resize()/devicePixelRatio dance — and its hidden-element races —
+// is gone entirely.)
 
 // ---------------------------------------------------------------------------
 // Boot
@@ -894,8 +854,6 @@ function goToSetup() {
 }
 
 function startGame({ numPlayers, configs, seed }) {
-  // Show the game screen FIRST so the canvas has a real layout box, then deal —
-  // newGame()'s resize()/refresh() paint into a now-visible canvas.
   hidePassDevice();
   if (router) router.show('game');
   newGame(numPlayers, configs, seed);
@@ -903,22 +861,20 @@ function startGame({ numPlayers, configs, seed }) {
 
 function boot() {
   const appRoot = document.getElementById('app');
-  ui.canvas = document.getElementById('map');
-  ui.ctx = ui.canvas ? ui.canvas.getContext('2d') : null;
+  ui.board = document.getElementById('map');
   ui.panel = document.getElementById('panel');
 
-  // Router over the [data-screen] sections. Repaint the board whenever the game
-  // screen becomes visible (so the canvas sizes against a real box).
+  // Router over the [data-screen] sections. Re-render on game-screen entry so
+  // the board reflects the latest view-model the moment it becomes visible.
   router = createRouter(appRoot, (name) => {
-    if (name === 'game') resize();
+    if (name === 'game') refresh();
   });
 
   // Build the static screens once.
   renderMenu(router.sections.menu, { onPlay: () => router.show('setup') });
   renderSetup(router.sections.setup, { onStart: startGame, onBack: goToMenu });
 
-  if (ui.canvas) ui.canvas.addEventListener('click', onCanvasClick);
-  window.addEventListener('resize', resize);
+  if (ui.board) ui.board.addEventListener('click', onBoardClick);
 
   // Keyboard shortcuts: Cmd/Ctrl+Z undoes, Cmd/Ctrl+Shift+Z redoes — but only on
   // the game screen (so they never fight the setup form's text fields). Pure

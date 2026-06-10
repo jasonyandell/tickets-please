@@ -1,9 +1,10 @@
-// Contract-based e2e for tickets-please. Replaces the old canvas color-sampling
-// check (banned: flaky + slow) with ONE deterministic play-through that asserts
-// FACTS, not pixels, via the Observable State Contract:
+// Contract-based e2e for tickets-please. Asserts FACTS, not pixels, via the
+// Observable State Contract:
 //   window.__APP__ = { screen, viewModel, lastAction }
 //   stable DOM hooks: [data-screen], [data-testid], button[data-action]
-//   the renderer's single canvas smoke flag: canvas.dataset.painted === "true"
+//   the board smoke flag: #map dataset.painted === "true"
+// SVG substrate upgrade: routes/cities are REAL elements (g[data-route-id] /
+// g[data-city-id]), so this suite also asserts board STRUCTURE directly.
 //
 // Flow: boot → menu → Play → setup (fixed seed) → Start → game; then drive a
 // scripted human turn (draw 2 cards) and assert structured state advanced.
@@ -98,6 +99,18 @@ test('menu → setup → start → play a turn (contract, no pixels)', async ({ 
   expect(before.viewModel, 'viewModel should be published').toBeTruthy();
   expect(before.viewModel.routes.length, 'routes derived').toBeGreaterThan(0);
   await expect(page.locator('[data-testid="prompt"]')).not.toHaveText('');
+
+  // 6a. STRUCTURAL: every route and city is a real SVG element — the board's
+  //     DOM mirrors the view-model one-to-one (the substrate upgrade's point).
+  const dom = await page.evaluate(() => ({
+    routes: document.querySelectorAll('#map [data-route-id]').length,
+    cities: document.querySelectorAll('#map .city[data-city-id]').length,
+    cars: document.querySelectorAll('#map .car').length,
+    citiesHook: Number(document.querySelector('#map')?.dataset.cities),
+  }));
+  expect(dom.routes, 'one element per route').toBe(before.viewModel.routes.length);
+  expect(dom.cities, 'city markers are real elements').toBe(dom.citiesHook);
+  expect(dom.cars, 'every route lays out at least one car slot').toBeGreaterThanOrEqual(dom.routes);
 
   // P1 is the human and it's their turn → own hand is revealed (counts present).
   const startHand = before.viewModel.players[0].handCount;
@@ -201,6 +214,16 @@ test('hover a route shows its claimability; claim a claimable route', async ({ p
   expect(after.lastAction, 'lastAction recorded').toBeTruthy();
   expect(after.lastAction.type).toBe('CLAIM_ROUTE');
   expect(after.lastAction.by, 'recorded actor is the human (P1)').toBe(0);
+
+  // STRUCTURAL: the route's own element mirrors the claim — data-claimed and
+  // data-owner flip on the live DOM node (no pixels, no __APP__ indirection).
+  const domClaim = await page.evaluate((id) => {
+    const g = document.querySelector(`#map [data-route-id="${id}"]`);
+    return g ? { claimed: g.dataset.claimed, owner: g.dataset.owner } : null;
+  }, String(target.id));
+  expect(domClaim, 'claimed route exists as a DOM element').toBeTruthy();
+  expect(domClaim.claimed, 'data-claimed flipped to true').toBe('true');
+  expect(domClaim.owner, 'data-owner names the claiming seat (P1)').toBe('0');
 
   // Claiming the first route makes P1 the live longest-route leader (length > 0).
   expect(after.viewModel.longestLeaderIndices, 'P1 now holds the longest route').toContain(0);

@@ -71,8 +71,9 @@
   --shadow-lg: 0 4px 18px rgba(0, 0, 0, 0.3);
 
   /* --- board / map ---
-     Painted on the <canvas>, which can't use var(); render.js samples these off
-     :root via getComputedStyle and falls back to the literal outside a browser. */
+     The SVG board consumes these via the "SVG board" rules at the end of this
+     file; render.js's cssVar() also samples some off :root for JS-side color
+     picks and falls back to the literal outside a browser. */
   --map-land: #e7ecdf;       /* map base fill (vignette center) */
   --map-land-edge: #dadfca;  /* map fill toward the edges */
   --map-grid: #d2dbc9;       /* faint cartographic graticule */
@@ -81,8 +82,8 @@
   --label-plate: #ffffff;    /* city-name plate behind the label */
 
   /* --- train-card palette ---
-     The single source for every card color: route fills (canvas), face-up card
-     chips, and hand pips. Each has a legible ink (see contrast test). */
+     The single source for every card color: route fills (SVG board), face-up
+     card chips, and hand pips. Each has a legible ink (see contrast test). */
   --card-red: #c62f3b;
   --card-orange: #cf6a14;
   --card-yellow: #e3b505;
@@ -94,7 +95,7 @@
   --card-gray: #c2c8cd;
   --card-wild: #b9bdc2;
 
-  /* --- board clarity (canvas-only, sampled via getComputedStyle) ---
+  /* --- board clarity ---
      Ticket-relevant routes (the active human's "build toward" hint) get a soft
      teal halo — a hue that collides with no card color or player color, so the
      highlight never reads as a required card color. The owner-mark plate/ink for
@@ -798,12 +799,117 @@ button.link {
 /* === end Wave C === */
 
 /* === city icons ===
-   Tokens for the canvas-drawn city skyline markers (render.js drawCityIcon).
-   The marker reuses --city-fill (building bodies) and --city-ring (white halo);
-   this adds the lit-window accent. Canvas can't resolve var(), so render.js
-   samples these off :root via getComputedStyle — keep them literal colors.
+   Token for the city skyline markers (SVG .city .win rects below). Keep the
+   literal-hex `--name: #hex;` form — tests/contrast.test.js parses it.
    Append-only; do NOT fold into the action-bar / Undo / Reload CSS above. */
 :root {
   --city-window: #e3b505;   /* lit windows on the city skyline marker */
 }
 /* === end city icons === */
+
+/* ============================================================
+   SVG board (V0 substrate) — appearance for the element-based
+   board renderer (src/ui/render.js). Every visual fact rides on
+   a data-* attribute or CSS custom property the renderer sets:
+     .route[data-color]          → car fill (card tokens)
+     .route[data-claimed]        → owner fill via --owner-color
+     .route[data-level]          → claimable / affordable strokes
+     .route[data-ticket-weight]  → teal heat ring + glow (1..4)
+     --pop-scale / --pop-flash   → claim pop (anim.js driver)
+     --pulse                     → traveling ticket pulse wash
+   ============================================================ */
+
+/* Backdrop: vignette gradient stops + faint graticule. */
+#map .vignette-center { stop-color: var(--map-land); }
+#map .vignette-edge { stop-color: var(--map-land-edge); }
+#map .board-grid {
+  fill: none;
+  stroke: var(--map-grid);
+  stroke-width: 1;
+  opacity: 0.55;
+}
+
+#map text { user-select: none; }
+
+/* --- routes: car slots ----------------------------------------------------- */
+.route { transform-box: fill-box; transform-origin: center; transform: scale(var(--pop-scale, 1)); }
+.route .car { stroke: rgba(0, 0, 0, 0.35); stroke-width: 1; }
+
+/* Unclaimed fill = the route's required card color. */
+.route[data-color="red"] .car { fill: var(--card-red); }
+.route[data-color="orange"] .car { fill: var(--card-orange); }
+.route[data-color="yellow"] .car { fill: var(--card-yellow); }
+.route[data-color="green"] .car { fill: var(--card-green); }
+.route[data-color="blue"] .car { fill: var(--card-blue); }
+.route[data-color="purple"] .car { fill: var(--card-purple); }
+.route[data-color="white"] .car { fill: var(--card-white); }
+.route[data-color="black"] .car { fill: var(--card-black); }
+.route[data-color="gray"] .car { fill: var(--card-gray); }
+.route[data-color="wild"] .car { fill: var(--card-wild); }
+
+/* Claimed: the owner's color takes over (renderer sets --owner-color). */
+.route[data-claimed="true"] .car {
+  fill: var(--owner-color, var(--card-gray));
+  stroke: rgba(0, 0, 0, 0.55);
+}
+
+/* Levels: a clear "go" vs a dashed "you could pay, just not now". */
+.route[data-level="claimable"] .car { stroke: #111; stroke-width: 3; }
+.route[data-level="affordable"] .car {
+  stroke: #c9851a;
+  stroke-width: 2.5;
+  stroke-dasharray: 5 4;
+}
+
+/* Wash overlay: pop flash + traveling pulse (white wash whose opacity is the
+   max of the two drivers) AND the ticket heat ring (teal stroke by weight). */
+.route .car-wash {
+  fill: #ffffff;
+  fill-opacity: max(var(--pop-flash, 0), var(--pulse, 0));
+  stroke: none;
+  pointer-events: none;
+}
+.route[data-ticket-weight="1"] .car-wash,
+.route[data-ticket-weight="2"] .car-wash,
+.route[data-ticket-weight="3"] .car-wash,
+.route[data-ticket-weight="4"] .car-wash { stroke: var(--ticket-glow); }
+.route[data-ticket-weight="1"] .car-wash { stroke-width: 3.5; stroke-opacity: 0.75; filter: drop-shadow(0 0 4px var(--ticket-glow)); }
+.route[data-ticket-weight="2"] .car-wash { stroke-width: 4.5; stroke-opacity: 0.85; filter: drop-shadow(0 0 6px var(--ticket-glow)); }
+.route[data-ticket-weight="3"] .car-wash { stroke-width: 5.5; stroke-opacity: 0.95; filter: drop-shadow(0 0 8px var(--ticket-glow)); }
+.route[data-ticket-weight="4"] .car-wash { stroke-width: 6.5; stroke-opacity: 1; filter: drop-shadow(0 0 10px var(--ticket-glow)); }
+
+/* Owner mark: a light disc ringed in the owner's color with their initial. */
+.route:not([data-claimed="true"]) .owner-mark { display: none; }
+.owner-mark { pointer-events: none; }
+.owner-mark .owner-plate {
+  fill: var(--label-plate);
+  stroke: var(--owner-color, #888);
+  stroke-width: 2;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
+}
+.owner-mark .owner-initial {
+  fill: var(--ink);
+  font: 700 9px var(--font-sans);
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+
+/* --- cities: skyline glyph + label plate ----------------------------------- */
+/* Cities never intercept the pointer: routes stay hoverable/clickable through
+   an overlapping marker, matching the canvas hit-testing behavior. */
+.city { pointer-events: none; filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.3)); }
+.city .bldg {
+  fill: var(--city-fill);
+  stroke: var(--city-ring);
+  stroke-width: 4;
+  stroke-linejoin: round;
+  paint-order: stroke;
+}
+.city .win { fill: var(--city-window); }
+.city .label-plate { fill: var(--label-plate); opacity: 0.92; }
+.city .city-label {
+  fill: var(--ink);
+  font: 600 13px var(--font-sans);
+  dominant-baseline: middle;
+}
+/* === end SVG board === */

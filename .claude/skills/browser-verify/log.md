@@ -56,3 +56,20 @@ zero app errors. `artifacts/board.png` is 35 KB (the blank failure PNG was 4.6 K
 **Skill changes earned this run:** (a) serve a built dir, not source, so e2e==prod;
 (b) Y ignores benign browser auto-requests; (c) the integrity rule above, now
 also in the SKILL header.
+
+## 2026-06-10 — V0 SVG substrate migration (canvas → element-based board)
+- Verified the full canvas→SVG board rewrite: `npm run test:e2e` 13/13 green
+  (including NEW structural assertions: one `[data-route-id]` group per
+  view-model route, `.city[data-city-id]` count === `dataset.cities`, a claim
+  flips `data-claimed`/`data-owner` on the live node), then **viewed**
+  `artifacts/board.png` and `artifacts/board-claim.png` — board fully rendered,
+  cities + labels + colored slots + owner mark visible. Observed, not claimed.
+- One real bug the suite caught: removing render.js's old `setBoardRenderContext`
+  import silently dropped `game/board.js` from the module graph → no
+  `window.__BOARD__`, 5 specs red. Fix: explicit side-effect import in main.js.
+  Lesson: a module that mounts itself on import is an invisible dependency —
+  when refactoring its importer, re-check the module graph, not just the API.
+- **Skill change earned this run:** the Validation "Y" still demanded pixel
+  sampling ("> 3 distinct colors") — stale since the board became element-based.
+  Rewrote that bullet to structural SVG assertions (routes/cities as real
+  elements). Pixels are now officially nobody's gate.

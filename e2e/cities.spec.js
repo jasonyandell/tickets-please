@@ -1,11 +1,12 @@
 // Contract-based e2e for the city skyline markers (Jam Batch 6). Asserts FACTS,
-// not pixels: the board paints, and the renderer's structured city-count hook
-// (#map dataset.cities, set in render.js drawMap) reflects the cities actually
-// laid out — at least every city that an unclaimed route connects. A screenshot
-// is captured for human review of icon legibility.
+// not pixels: the board paints, and the structured city-count hook
+// (#map dataset.cities, set in render.js) reflects the cities actually laid
+// out — at least every city that an unclaimed route connects. SVG substrate:
+// the markers are real elements (g.city[data-city-id]), asserted directly.
+// A screenshot is captured for human review of icon legibility.
 //
 // Hooks used (Observable State Contract): window.__APP__.{screen,viewModel},
-// [data-screen], [data-action], [data-testid], canvas.dataset.{painted,cities}.
+// [data-screen], [data-action], [data-testid], #map dataset.{painted,cities}.
 
 import { test, expect } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
@@ -75,6 +76,13 @@ test('cities render as icons and the city-count hook matches the map (no pixels)
   expect(endpoints.size, 'routes reference some cities').toBeGreaterThan(0);
   expect(cityCount, 'drawn cities cover every routed city')
     .toBeGreaterThanOrEqual(endpoints.size);
+
+  // STRUCTURAL (SVG substrate): the markers are real elements and the count
+  // hook mirrors the actual DOM, marker for marker.
+  const domCities = await page.evaluate(
+    () => document.querySelectorAll('#map .city[data-city-id]').length,
+  );
+  expect(domCities, 'city markers are real elements matching the hook').toBe(cityCount);
 
   // Evidence (icon legibility) + zero errors throughout.
   await page.screenshot({ path: 'artifacts/cities.png', fullPage: true });

@@ -1,8 +1,29 @@
-// render.js — Canvas drawing for the tickets-please map.
+// render.js — SVG/DOM renderer for the tickets-please board.
 //
-// Pure-ish: it only touches the provided CanvasRenderingContext2D. All geometry
-// comes from layout.js so this file just paints. It reads the engine map/state
-// defensively (field names may vary) and never mutates them.
+// Successor to the canvas painter. Every route, car slot, and city is a REAL
+// element, so:
+//   - appearance lives in style.css (design tokens + data-attribute selectors),
+//   - game state is attribute-driven (data-claimed / data-owner / data-level /
+//     data-ticket-weight flip per render),
+//   - e2e asserts structure (elements + attributes), never pixels.
+//
+// The renderer is written directly against the view-model contract
+// (viewModel.js) — zero defensive engine-state reading. main.js calls
+// renderBoard(svg, map, vm) on every refresh; the static skeleton (slots,
+// cities, labels) is built once per (svg, map) and only attributes change
+// after that.
+//
+// Observable State Contract kept from the canvas era (e2e relies on it):
+//   #map dataset: painted, cities, animating, popCount
+// Plus the structural upgrade the SVG substrate enables:
+//   g.route[data-route-id]  — one per route, data-* mirrors the view-model
+//   g.city[data-city-id]    — one per city
+//
+// Animations follow the anim.js kit: pure frame models + isolated rAF drivers.
+// Drivers mutate CSS custom properties (--pop-scale/--pop-flash/--pulse) on
+// route groups; style.css turns those into transforms/opacity. In instant mode
+// (reduced-motion / ?test / __INSTANT_ANIM__) no driver runs — final state is
+// reached immediately and pops are still COUNTED (durable popCount).
 
 import {
   computeLayout,
@@ -17,8 +38,7 @@ import {
   routeTo,
   cityId,
   cityName,
-} from './layout.js';
-import { setBoardRenderContext } from './game/board.js';
+} from './geometry.js';
 import {
   createPopAnimator,
   createLoopAnimator,
@@ -28,103 +48,21 @@ import {
   PULSE_HALF_WIDTH,
 } from './anim.js';
 
+// The board's fixed internal coordinate system. index.html declares the same
+// viewBox; CSS scales it to the screen, so there is NO resize handling, no
+// devicePixelRatio, and no hidden-element sizing race anywhere.
+export const VIEWBOX = { width: 1200, height: 760, pad: 50 };
+
 // Player colors used both on the map (claimed routes) and the side panel.
 export const PLAYER_COLORS = ['#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4'];
 
-// ── Claimed-route "pop" animation (the reusable anim pattern; see anim.js) ───
-// State lives at module scope so it survives across the renderer's per-frame
-// drawMap() calls (the controller owns the render loop; we never import it).
-//   prevClaimedRids — claimed set from the previous paint, to detect NEW claims.
-//                     null until the first paint so we never pop the whole board
-//                     on boot / on a restored game (seed silently the first time).
-//   popAnimator     — the single rAF driver; repaints via drawLast() each frame.
-//   drawLast        — the exact args of the last drawMap() call, so the driver
-//                     can re-issue the paint without reaching into the controller.
-//   popCount        — durable, monotonic count of pops triggered (exposed on the
-//                     canvas so e2e can assert "a pop fired" with no timing).
-let prevClaimedRids = null;
-let popAnimator = null;
-let drawLast = null;
-let popCount = 0;
+// ---------------------------------------------------------------------------
+// Design-token + color helpers (consumed by panel.js / setup.js / contrast test)
+// ---------------------------------------------------------------------------
 
-// ── Traveling ticket pulse (Batch 10: a bright `_-*-_` bump glides source→dest
-// along each of the viewer's ticket paths, looping; see anim.js) ─────────────
-//   pulseAnimator — the single CONTINUOUS rAF driver; re-issues the paint each
-//                   frame so the clock-driven pulse moves. ONE timing place; no
-//                   setTimeout. Lazily created, started only when there is a
-//                   pulse to show and motion is allowed (not instant mode).
-let pulseAnimator = null;
-
-// Start/stop the continuous pulse driver to match whether a pulse should run.
-// Idempotent: re-asserting the same state is a no-op (start()/stop() guard it).
-function syncPulseDriver(shouldRun) {
-  try {
-    if (shouldRun) {
-      if (!pulseAnimator) pulseAnimator = createLoopAnimator({ onFrame: drawLastFrame });
-      pulseAnimator.start();
-    } else if (pulseAnimator) {
-      pulseAnimator.stop();
-    }
-  } catch (_) { /* animation must never break a paint */ }
-}
-
-// Re-issue the most recent paint (driven by the pop animator each frame). It
-// re-enters drawMap with the cached args; no new pops start (the claimed set is
-// unchanged), it just reads fresher pop params.
-function drawLastFrame() {
-  if (drawLast) {
-    drawMap(drawLast.ctx, drawLast.map, drawLast.state, drawLast.view, drawLast.highlight);
-  }
-}
-
-// Reflect the animator's liveness on the canvas: a single boolean smoke flag
-// (data-animating) plus a durable pop counter — the Observable State Contract
-// for animation (facts, never pixels).
-function syncAnimFlags(canvas) {
-  if (!canvas) return;
-  canvas.dataset.animating = (popAnimator && popAnimator.isActive()) ? 'true' : 'false';
-  canvas.dataset.popCount = String(popCount);
-}
-
-// Detect newly-claimed routes between paints and pop each one. Honors instant
-// mode (reduced-motion / test): the pop is still COUNTED (so e2e sees it fired)
-// but no rAF runs, so the final owned style is reached with zero timing coupling.
-function triggerPops(canvas, claimedRids) {
-  try {
-    if (prevClaimedRids === null) { prevClaimedRids = claimedRids; syncAnimFlags(canvas); return; }
-    const fresh = [];
-    for (const rid of claimedRids) if (!prevClaimedRids.has(rid)) fresh.push(rid);
-    prevClaimedRids = claimedRids;
-    if (fresh.length === 0) return;
-
-    if (isInstantMode()) {
-      // Instant: count the pops, skip the animation entirely (final state now).
-      popCount += fresh.length;
-      syncAnimFlags(canvas);
-      return;
-    }
-    if (!popAnimator) {
-      popAnimator = createPopAnimator({
-        onFrame: drawLastFrame,
-        onChange: () => syncAnimFlags(canvas),
-      });
-    }
-    for (const rid of fresh) { popCount += 1; popAnimator.start(rid); }
-    syncAnimFlags(canvas);
-  } catch (_) { /* animation must never break a paint */ }
-}
-
-// Live pop params for a claimed route this frame, or null (no pop / instant).
-function popFor(rid) {
-  try {
-    return popAnimator ? popAnimator.paramsFor(String(rid)) : null;
-  } catch (_) { return null; }
-}
-
-// Read a CSS custom property off :root so canvas paint shares the same design
-// tokens the DOM uses via var(). The canvas can't resolve var(), so it samples
-// computed style. Falls back to the literal when there's no document (node
-// tests) or the token is undefined, keeping this module import-safe everywhere.
+// Read a CSS custom property off :root so JS-painted colors share the design
+// tokens. Falls back to the literal when there's no document (node tests) or
+// the token is undefined, keeping this module import-safe everywhere.
 function cssVar(name, fallback) {
   try {
     if (typeof document !== 'undefined' && document.documentElement) {
@@ -197,39 +135,9 @@ export function playerColor(playerIndex) {
   return PLAYER_COLORS[playerIndex % PLAYER_COLORS.length];
 }
 
-// Build a routeId -> ownerIndex map from state, reading several plausible shapes.
-function claimedOwners(state) {
-  const owners = new Map();
-  if (!state) return owners;
-
-  // Shape 1: state.claims = { routeId: playerId }
-  if (state.claims && !Array.isArray(state.claims) && typeof state.claims === 'object') {
-    for (const [rid, pid] of Object.entries(state.claims)) owners.set(rid, pid);
-  }
-  // Shape 2: state.claimedRoutes = [{ routeId, playerId }] or { routeId: playerId }
-  if (Array.isArray(state.claimedRoutes)) {
-    for (const c of state.claimedRoutes) {
-      if (c && c.routeId != null) owners.set(c.routeId, c.player ?? c.playerId ?? c.owner);
-    }
-  } else if (state.claimedRoutes && typeof state.claimedRoutes === 'object') {
-    for (const [rid, pid] of Object.entries(state.claimedRoutes)) owners.set(rid, pid);
-  }
-  // Shape 3: per-player route lists state.players[i].routes / .claimed
-  const players = getPlayers(state);
-  players.forEach((p, i) => {
-    const pid = p.id != null ? p.id : i;
-    const lists = [p.routes, p.claimed, p.claimedRoutes, p.ownedRoutes];
-    for (const list of lists) {
-      if (Array.isArray(list)) {
-        for (const rid of list) {
-          const id = rid && rid.routeId != null ? rid.routeId : rid;
-          if (id != null) owners.set(id, pid);
-        }
-      }
-    }
-  });
-  return owners;
-}
+// ---------------------------------------------------------------------------
+// Defensive state helpers kept for main.js (controller-side reads)
+// ---------------------------------------------------------------------------
 
 export function getPlayers(state) {
   if (!state) return [];
@@ -249,162 +157,319 @@ export function playerIndexOf(state, playerId) {
   return 0;
 }
 
-// Build the per-route highlight LEVEL map keyed by routeId:
-//   'claimable'  — legal to claim right now (strong, solid highlight)
-//   'affordable' — the active human could cover the cost, but it is not legal
-//                  to claim this instant (subtle dashed highlight)
-// Claimable comes from the `highlight` set main.js passes (legal moves); the
-// affordable-but-not-now tier is read from the published view-model so the board
-// distinguishes "go" from "you can pay for it, just not yet". Affordable styling
-// is shown ONLY on the active human's turn (never leaks an AI/opponent hand).
-function routeLevels(highlight, claimedRids) {
-  const levels = new Map();
-  const hi = highlight || new Set();
-  for (const rid of hi) levels.set(String(rid), 'claimable');
+// ---------------------------------------------------------------------------
+// SVG skeleton — built once per (svg, map)
+// ---------------------------------------------------------------------------
 
-  let vm = null;
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function el(name, attrs, parent) {
+  const node = document.createElementNS(SVG_NS, name);
+  if (attrs) {
+    for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, String(v));
+  }
+  if (parent) parent.appendChild(node);
+  return node;
+}
+
+// Canonical color key for data-color (drives the CSS fill rules).
+function colorKey(color) {
+  const k = String(color == null ? 'gray' : color).toLowerCase();
+  if (k === 'grey' || k === 'any') return 'gray';
+  if (k === 'locomotive' || k === 'rainbow') return 'wild';
+  return CARD_TOKENS[k] ? k : 'gray';
+}
+
+// City skyline glyph: three buildings of varied height with lit windows —
+// [dx, w, h] relative to the city point, sharing a baseline just below it.
+const CITY_BUILDINGS = [
+  [-14, 8, 15],
+  [-5, 10, 22],
+  [6, 8, 18],
+];
+const CITY_BASELINE = 8; // baseline offset below the city point (viewBox units)
+
+// Board skeleton state. One board per page; module scope mirrors the canvas
+// renderer's module-scoped animation state (and keeps the render entry pure-ish:
+// renderBoard only touches the SVG it is given).
+let B = null; // { svg, map, layout, routeEls: Map<idStr, refs>, routeLen: Map }
+
+// Anim state survives skeleton rebuilds on purpose:
+//   prevClaimedRids — claimed set from the previous render, to detect NEW claims
+//                     (null until the first render so a restored game never
+//                     pops the whole board on boot).
+//   popCount        — durable, monotonic count of pops (exposed on #map so e2e
+//                     asserts "a pop fired" with no timing).
+let prevClaimedRids = null;
+let popCount = 0;
+let popAnimator = null;
+let popping = new Set();
+let pulseAnimator = null;
+let pulseLit = new Set();
+let pulseSegs = []; // [{ pathLength, segs: [{ idStr, center }] }]
+
+function buildSkeleton(svg, map) {
+  svg.textContent = '';
+  svg.setAttribute('viewBox', `0 0 ${VIEWBOX.width} ${VIEWBOX.height}`);
+
+  // Bake the map into viewBox coordinates ONCE: all geometry below is in
+  // fixed viewBox units; the SVG scales itself from there.
+  const t = fitTransform(map, VIEWBOX.width, VIEWBOX.height, VIEWBOX.pad);
+  const vbMap = {
+    cities: getCities(map).map((c) => {
+      const p = applyTransform({ x: Number(c.x), y: Number(c.y) }, t);
+      return { id: cityId(c), name: cityName(c), x: p.x, y: p.y };
+    }),
+    routes: getRoutes(map),
+  };
+  const layout = computeLayout(vbMap);
+
+  // --- defs: the paper-vignette gradient (stop colors come from CSS) -------
+  const defs = el('defs', null, svg);
+  const grad = el('radialGradient', { id: 'map-vignette', cx: '50%', cy: '42%', r: '72%' }, defs);
+  el('stop', { offset: '0%', class: 'vignette-center' }, grad);
+  el('stop', { offset: '100%', class: 'vignette-edge' }, grad);
+
+  // --- backdrop: vignette + faint graticule --------------------------------
+  el('rect', {
+    class: 'board-bg', x: 0, y: 0,
+    width: VIEWBOX.width, height: VIEWBOX.height,
+    fill: 'url(#map-vignette)',
+  }, svg);
+  const step = 64;
+  let d = '';
+  for (let x = step; x < VIEWBOX.width; x += step) d += `M${x} 0V${VIEWBOX.height}`;
+  for (let y = step; y < VIEWBOX.height; y += step) d += `M0 ${y}H${VIEWBOX.width}`;
+  el('path', { class: 'board-grid', d }, svg);
+
+  // --- routes ---------------------------------------------------------------
+  const routesLayer = el('g', { class: 'routes-layer' }, svg);
+  const routeEls = new Map();
+  const routeLen = new Map();
+  for (const rl of layout.routes) {
+    const idStr = String(rl.id);
+    routeLen.set(idStr, routeLength(rl.route));
+    const g = el('g', {
+      class: 'route',
+      'data-route-id': idStr,
+      'data-color': colorKey(routeColor(rl.route)),
+      'data-length': rl.boxes.length,
+      'data-claimed': 'false',
+      'data-level': 'none',
+      'data-ticket-weight': '0',
+    }, routesLayer);
+
+    const deg = (rad) => (rad * 180) / Math.PI;
+    const rectAttrs = (box) => ({
+      x: box.cx - box.w / 2,
+      y: box.cy - box.h / 2,
+      width: box.w,
+      height: box.h,
+      rx: 3,
+      transform: `rotate(${deg(box.angle).toFixed(3)} ${box.cx} ${box.cy})`,
+    });
+    for (const box of rl.boxes) el('rect', { class: 'car', ...rectAttrs(box) }, g);
+    // Wash overlay: one per slot, ON TOP of the cars. Carries the heat-map
+    // ring (stroke, keyed by data-ticket-weight) and the pop-flash / pulse
+    // wash (white fill whose opacity is max(--pop-flash, --pulse)).
+    for (const box of rl.boxes) el('rect', { class: 'car-wash', ...rectAttrs(box) }, g);
+
+    // Owner mark on the middle slot: a small light disc ringed in the owner's
+    // color bearing their initial. Hidden by CSS until data-claimed="true".
+    const mid = rl.boxes[Math.floor(rl.boxes.length / 2)];
+    if (mid) {
+      const mark = el('g', { class: 'owner-mark', transform: `translate(${mid.cx} ${mid.cy})` }, g);
+      el('circle', { class: 'owner-plate', r: 7 }, mark);
+      const txt = el('text', { class: 'owner-initial', y: 0.5 }, mark);
+      txt.textContent = '';
+    }
+    routeEls.set(idStr, g);
+  }
+
+  // --- cities ----------------------------------------------------------------
+  const citiesLayer = el('g', { class: 'cities-layer' }, svg);
+  for (const c of layout.cities) {
+    const g = el('g', {
+      class: 'city',
+      'data-city-id': String(c.id),
+      transform: `translate(${c.x} ${c.y})`,
+    }, citiesLayer);
+    const base = CITY_BASELINE;
+    // Building bodies (paint-order: stroke in CSS gives the white halo).
+    for (const [dx, w, h] of CITY_BUILDINGS) {
+      el('rect', { class: 'bldg', x: dx, y: base - h, width: w, height: h, rx: 2 }, g);
+    }
+    // Lit windows — a small grid of accent squares.
+    const inset = 2;
+    const ww = 2;
+    const gap = 1.8;
+    for (const [dx, w, h] of CITY_BUILDINGS) {
+      const left = dx + inset;
+      const right = dx + w - inset;
+      const cols = w >= 9 ? 2 : 1;
+      for (let fy = base - h + inset + 0.6; fy + ww <= base - inset; fy += ww + gap) {
+        for (let col = 0; col < cols; col++) {
+          const wx = left + col * (ww + gap);
+          if (wx + ww <= right) el('rect', { class: 'win', x: wx, y: fy, width: ww, height: ww }, g);
+        }
+      }
+    }
+    // Label on a rounded plate, clearing the rightmost building edge. Plate
+    // width is estimated from the label length (13px system font ≈ 6.8px/char)
+    // so the build never depends on layout/measure (works while hidden).
+    let edge = -Infinity;
+    for (const [dx, w] of CITY_BUILDINGS) edge = Math.max(edge, dx + w);
+    const label = String(c.name || '');
+    if (label) {
+      const plateX = edge + 5;
+      const plateW = label.length * 6.8 + 9;
+      el('rect', { class: 'label-plate', x: plateX, y: -10, width: plateW, height: 20, rx: 5 }, g);
+      const txt = el('text', { class: 'city-label', x: plateX + 4.5, y: 1 }, g);
+      txt.textContent = label;
+    }
+  }
+
+  svg.dataset.cities = String(layout.cities.length);
+  B = { svg, map, layout, routeEls, routeLen };
+  syncAnimFlags();
+}
+
+// ---------------------------------------------------------------------------
+// Animations — pop (claim) + traveling ticket pulse
+// ---------------------------------------------------------------------------
+
+function syncAnimFlags() {
+  if (!B || !B.svg) return;
+  B.svg.dataset.animating = (popAnimator && popAnimator.isActive()) ? 'true' : 'false';
+  B.svg.dataset.popCount = String(popCount);
+}
+
+// Per-frame pop update: write the live pop params onto each popping route's
+// custom properties; style.css turns them into a scale + white flash.
+function applyPopFrames() {
+  if (!B) return;
+  for (const idStr of [...popping]) {
+    const g = B.routeEls.get(idStr);
+    const p = popAnimator ? popAnimator.paramsFor(idStr) : null;
+    if (g && p) {
+      g.style.setProperty('--pop-scale', String(p.scale));
+      g.style.setProperty('--pop-flash', String(Math.max(0, Math.min(1, p.flash))));
+    } else {
+      if (g) {
+        g.style.removeProperty('--pop-scale');
+        g.style.removeProperty('--pop-flash');
+      }
+      popping.delete(idStr);
+    }
+  }
+}
+
+// Detect newly-claimed routes between renders and pop each one. Honors instant
+// mode (reduced-motion / test): the pop is still COUNTED (so e2e sees it fired)
+// but no rAF runs, so the final owned style is reached with zero timing coupling.
+function triggerPops(claimedRids) {
   try {
-    vm = (typeof window !== 'undefined' && window.__APP__) ? window.__APP__.viewModel : null;
-  } catch (_) { vm = null; }
+    if (prevClaimedRids === null) { prevClaimedRids = claimedRids; syncAnimFlags(); return; }
+    const fresh = [];
+    for (const rid of claimedRids) if (!prevClaimedRids.has(rid)) fresh.push(rid);
+    prevClaimedRids = claimedRids;
+    if (fresh.length === 0) return;
 
-  if (vm && Array.isArray(vm.routes)) {
-    const showAfford = vm.secretForIndex != null && vm.secretForIndex === vm.currentPlayerIndex;
-    for (const r of vm.routes) {
-      if (!r || r.claimed) continue;
-      const rid = String(r.id);
-      if (r.claimable) levels.set(rid, 'claimable');
-      else if (showAfford && r.affordable && !levels.has(rid) && !claimedRids.has(rid)) {
-        levels.set(rid, 'affordable');
+    if (isInstantMode()) {
+      popCount += fresh.length;
+      syncAnimFlags();
+      return;
+    }
+    if (!popAnimator) {
+      popAnimator = createPopAnimator({
+        onFrame: applyPopFrames,
+        onChange: syncAnimFlags,
+      });
+    }
+    for (const rid of fresh) {
+      popCount += 1;
+      popping.add(rid);
+      popAnimator.start(rid);
+    }
+    syncAnimFlags();
+  } catch (_) { /* animation must never break a render */ }
+}
+
+// Per-frame pulse update: light each route on a viewer ticket path by the pure
+// pulse model's intensity at its position along the path. The `_-*-_` bump
+// glides source→dest at constant velocity, looping (clock: performance.now()).
+function pulseFrame() {
+  if (!B) return;
+  const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
+  const lit = new Set();
+  for (const path of pulseSegs) {
+    for (const s of path.segs) {
+      const intensity = pulseIntensityAt(now, path.pathLength, s.center, {
+        velocity: PULSE_VELOCITY,
+        halfWidth: PULSE_HALF_WIDTH,
+      });
+      if (intensity <= 0.02) continue;
+      const g = B.routeEls.get(s.idStr);
+      if (g) {
+        g.style.setProperty('--pulse', String(Math.min(1, 0.9 * intensity)));
+        lit.add(s.idStr);
       }
     }
   }
-  return levels;
+  for (const idStr of pulseLit) {
+    if (!lit.has(idStr)) {
+      const g = B.routeEls.get(idStr);
+      if (g) g.style.removeProperty('--pulse');
+    }
+  }
+  pulseLit = lit;
 }
 
-// Main entry: draw the whole map.
-// ctx: 2d context; map: engine map; state: engine state;
-// view: { width, height, transform }; highlight: Set<routeId> claimable now.
-export function drawMap(ctx, map, state, view, highlight) {
-  const { width, height } = view;
-  // Cache this exact call so the pop animator can re-issue the paint each frame
-  // (it owns no controller state; it just replays the latest draw).
-  drawLast = { ctx, map, state, view, highlight };
-  ctx.clearRect(0, 0, width, height);
-
-  // Map-like backdrop: a soft paper vignette + a faint graticule.
-  drawBoardBackground(ctx, width, height);
-
-  const t = view.transform || fitTransform(map, width, height);
-  const layout = view.layout || computeLayout(map);
-  const owners = claimedOwners(state);
-
-  const claimedRids = new Set();
-  for (const rl of layout.routes) {
-    if (owners.get(rl.id) !== undefined) claimedRids.add(String(rl.id));
-  }
-  // Pop any route claimed since the last paint (first anim of the reusable kit).
-  triggerPops(ctx.canvas, claimedRids);
-  const levels = routeLevels(highlight, claimedRids);
-
-  // Read the published view-model once for: the active human's per-route ticket
-  // WEIGHT (privacy-safe — the view-model only populates it for the active human;
-  // weight = how many of my incomplete tickets' shortest paths use this route)
-  // and per-route owner display names (so a claimed route can be marked with its
-  // owner's initial). Both are facts already derived in viewModel.js.
-  const vm = liveViewModel();
-  const vmRoutesById = new Map();
-  if (vm && Array.isArray(vm.routes)) {
-    for (const r of vm.routes) vmRoutesById.set(String(r.id), r);
-  }
-
-  // Draw routes.
-  for (const rl of layout.routes) {
-    const r = rl.route;
-    const rid = rl.id;
-    const ownerId = owners.get(rid);
-    const claimed = ownerId !== undefined;
-    const level = claimed ? 'none' : (levels.get(String(rid)) || 'none');
-    // Highlight only UNCLAIMED ticket routes — what the player still has to
-    // build (a claimed route already reads as owned via its color + mark). The
-    // weight (how many of my tickets this route serves) grades the glow: routes
-    // serving more tickets glow harder, so overlaps pop as "build here first".
-    const vmrForWeight = vmRoutesById.get(String(rid));
-    const ticketWeight = claimed ? 0 : ((vmrForWeight && vmrForWeight.ticketWeight) || 0);
-
-    let fill;
-    let stroke = 'rgba(0,0,0,0.35)';
-    if (claimed) {
-      fill = playerColor(playerIndexOf(state, ownerId));
-      stroke = 'rgba(0,0,0,0.55)';
-    } else {
-      const col = routeColor(r);
-      const isGray = col == null || /^(gray|grey|any|wild)$/i.test(String(col));
-      fill = isGray ? cardColorCss('gray') : cardColorCss(col);
-    }
-
-    // A just-claimed route pops (grows + flashes white) then settles to owned.
-    const pop = claimed ? popFor(rid) : null;
-    for (const box of rl.boxes) {
-      drawBox(ctx, box, t, fill, stroke, level, ticketWeight, pop);
-    }
-
-    // Owner indicator: a claimed route gets the owner's colored fill PLUS a
-    // small initialed token on its middle car box, so it unmistakably reads as
-    // "owned by player X" — never confusable with an unclaimed route whose car
-    // boxes merely show the required color.
-    if (claimed && rl.boxes.length) {
-      const ownerIdx = playerIndexOf(state, ownerId);
-      const vmr = vmRoutesById.get(String(rid));
-      const ownerName = vmr && vmr.ownerName != null ? vmr.ownerName : ownerNameFromState(state, ownerIdx);
-      const mid = rl.boxes[Math.floor(rl.boxes.length / 2)];
-      drawOwnerMark(ctx, mid, t, ownerInitial(ownerName, ownerIdx), fill);
-    }
-  }
-
-  // Traveling ticket pulse: a bright bump glides source→dest along each of the
-  // viewer's ticket paths at constant velocity, looping — drawn ON TOP of the
-  // static heat-map. Skipped in instant mode (reduced-motion / test) so the gate
-  // never depends on motion; the static heat-map above remains the durable read.
-  drawTicketPulses(ctx, layout, vm, t);
-
-  // Draw cities on top.
-  for (const c of layout.cities) {
-    const p = applyTransform({ x: c.x, y: c.y }, t);
-    drawCity(ctx, p.x, p.y, c.name);
-  }
-
-  // Hand the board interaction layer the live geometry it needs to hit-test the
-  // cursor and locate routes (it imports only pure helpers; we push, never pull).
+// Start/stop the continuous pulse driver to match whether a pulse should run.
+// Idempotent. In instant mode (reduced-motion / test) the driver never runs:
+// the static heat-map remains the durable visual and the gate never couples
+// to motion.
+function syncPulseDriver(shouldRun) {
   try {
-    setBoardRenderContext({ canvas: ctx.canvas, map, transform: t, layout, width, height });
-  } catch (_) { /* board layer optional */ }
+    if (shouldRun) {
+      if (!pulseAnimator) pulseAnimator = createLoopAnimator({ onFrame: pulseFrame });
+      pulseAnimator.start();
+    } else if (pulseAnimator) {
+      pulseAnimator.stop();
+      for (const idStr of pulseLit) {
+        const g = B && B.routeEls.get(idStr);
+        if (g) g.style.removeProperty('--pulse');
+      }
+      pulseLit = new Set();
+    }
+  } catch (_) { /* animation must never break a render */ }
+}
 
-  // Observable State Contract — single canvas smoke signal. Once the board has
-  // actually been drawn (non-zero size), flag it so e2e can assert paint without
-  // sampling pixels. This is the ONLY canvas check anywhere.
-  if (ctx.canvas && width > 0 && height > 0) {
-    ctx.canvas.dataset.painted = 'true';
-    // City count — a structured (non-pixel) smoke hook so e2e can assert the
-    // city icons were laid out and drawn, mirroring the layout's city list.
-    ctx.canvas.dataset.cities = String(layout.cities.length);
+// Lay each viewer ticket path out in path-distance units: every route occupies
+// [acc, acc+len]; its center is its midpoint. (Same model the canvas drew.)
+function computePulseSegs(vm) {
+  const out = [];
+  const paths = vm && Array.isArray(vm.ticketPaths) ? vm.ticketPaths : [];
+  if (!B) return out;
+  for (const path of paths) {
+    const ids = path && Array.isArray(path.routeIds) ? path.routeIds : path;
+    if (!Array.isArray(ids) || ids.length === 0) continue;
+    const segs = [];
+    let pathLength = 0;
+    for (const rid of ids) {
+      const idStr = String(rid);
+      const len = B.routeLen.get(idStr) || 1;
+      segs.push({ idStr, center: pathLength + len / 2 });
+      pathLength += len;
+    }
+    if (pathLength > 0) out.push({ pathLength, segs });
   }
+  return out;
 }
 
-// The live view-model published on the Observable State Contract (or null).
-function liveViewModel() {
-  try {
-    return (typeof window !== 'undefined' && window.__APP__) ? window.__APP__.viewModel : null;
-  } catch (_) { return null; }
-}
-
-// Fallback owner name when the view-model has none (e.g. a stray render before
-// the first viewModel publish): read the engine player, else "P{n}".
-function ownerNameFromState(state, ownerIdx) {
-  const players = getPlayers(state);
-  const p = players[ownerIdx];
-  if (p && p.name) return p.name;
-  return `P${ownerIdx + 1}`;
-}
+// ---------------------------------------------------------------------------
+// renderBoard — the per-refresh update pass (attributes only)
+// ---------------------------------------------------------------------------
 
 // A single-character badge for an owner: their name's initial, else the seat #.
 function ownerInitial(name, ownerIdx) {
@@ -412,348 +477,69 @@ function ownerInitial(name, ownerIdx) {
   return s ? s[0].toUpperCase() : String(ownerIdx + 1);
 }
 
-// Draw the owner token: a small light disc ringed in the owner's color, bearing
-// their initial in dark ink — legible on any owner-color fill underneath.
-function drawOwnerMark(ctx, box, t, initial, ownerColor) {
-  const ctr = applyTransform({ x: box.cx, y: box.cy }, t);
-  const radius = 7;
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(ctr.x, ctr.y, radius, 0, Math.PI * 2);
-  ctx.fillStyle = cssVar('--label-plate', '#ffffff');
-  ctx.shadowColor = 'rgba(0,0,0,0.35)';
-  ctx.shadowBlur = 2;
-  ctx.shadowOffsetY = 1;
-  ctx.fill();
-  ctx.shadowColor = 'transparent';
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = ownerColor;
-  ctx.stroke();
-  ctx.fillStyle = cssVar('--ink', '#1a1a1a');
-  ctx.font = '700 9px system-ui, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(initial, ctr.x, ctr.y + 0.5);
-  ctx.restore();
-}
+/**
+ * Render the board: build the skeleton if needed, then mirror the view-model
+ * onto route/city attributes. Pure projection — reads vm only.
+ *
+ * @param {SVGSVGElement} svg - the #map element.
+ * @param {object} map - engine map (geometry source; skeleton key).
+ * @param {object|null} vm - view-model from buildViewModel (null before a game).
+ */
+export function renderBoard(svg, map, vm) {
+  if (!svg || !map) return;
+  if (!B || B.svg !== svg || B.map !== map) buildSkeleton(svg, map);
+  if (!vm || !Array.isArray(vm.routes)) { syncAnimFlags(); return; }
 
-// level: 'claimable' (solid, bold — a clear "go"), 'affordable' (dashed amber —
-// "you can pay, just not this instant"), or 'none' (normal). ticketWeight (>= 0,
-// orthogonal to level) adds a teal halo marking routes that serve the active
-// human's incomplete tickets — "build toward this". It reads as a bold teal
-// OUTLINE around the box plus a softer glow underlay; both strengthen with the
-// weight, so a route on two tickets' shortest paths reads hotter than one,
-// turning the board into an obvious "where to build first" heat-map.
-function drawBox(ctx, box, t, fill, stroke, level, ticketWeight, pop) {
-  let c = box.corners.map((pt) => applyTransform(pt, t));
+  const cur = vm.players && vm.players[vm.currentPlayerIndex];
+  const humanTurn = !!(cur && !cur.isAI);
+  // Affordable styling is shown ONLY on the active human's own view (never
+  // leaks an AI/opponent hand) — same rule the canvas renderer enforced.
+  const showAfford = vm.secretForIndex != null && vm.secretForIndex === vm.currentPlayerIndex;
 
-  // Pop: scale the car box around its own centroid so a freshly-claimed route
-  // briefly bulges then settles (scale returns to 1). Pure geometry on the
-  // already-transformed corners — no extra canvas transform to leak.
-  if (pop && pop.scale && pop.scale !== 1) {
-    let cx = 0;
-    let cy = 0;
-    for (const p of c) { cx += p.x; cy += p.y; }
-    cx /= c.length; cy /= c.length;
-    c = c.map((p) => ({ x: cx + (p.x - cx) * pop.scale, y: cy + (p.y - cy) * pop.scale }));
-  }
+  const claimedRids = new Set();
+  for (const r of vm.routes) {
+    const idStr = String(r.id);
+    const g = B.routeEls.get(idStr);
+    if (!g) continue;
 
-  // Ticket halo (underlay): paint the box in the glow color WITH a blur so the
-  // color bleeds outward as a halo, then overpaint with the real fill below. The
-  // bled-out ring stays, reading as "this route serves your ticket(s)". Blur
-  // radius and opacity grow with the weight (capped) so overlaps read hotter.
-  const tw = Math.min(ticketWeight, 4); // cap so a busy hub doesn't blow out
-  const glow = cssVar('--ticket-glow', '#0f8a9c');
-  if (ticketWeight > 0) {
-    ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(c[0].x, c[0].y);
-    for (let i = 1; i < c.length; i++) ctx.lineTo(c[i].x, c[i].y);
-    ctx.closePath();
-    ctx.shadowColor = glow;
-    ctx.shadowBlur = 10 + tw * 6;      // 16 at weight 1, hotter as weight rises
-    ctx.globalAlpha = Math.min(1, 0.7 + 0.1 * (tw - 1)); // 0.7 → 1.0
-    ctx.fillStyle = glow;
-    ctx.fill();
-    ctx.shadowColor = 'transparent';
-    ctx.fill();
-    ctx.restore();
-  }
-
-  ctx.beginPath();
-  ctx.moveTo(c[0].x, c[0].y);
-  for (let i = 1; i < c.length; i++) ctx.lineTo(c[i].x, c[i].y);
-  ctx.closePath();
-  ctx.fillStyle = fill;
-  ctx.fill();
-
-  if (level === 'claimable') {
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = '#111';
-    ctx.stroke();
-    ctx.save();
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = 'rgba(255,255,255,0.95)';
-    ctx.stroke();
-    ctx.restore();
-  } else if (level === 'affordable') {
-    ctx.save();
-    ctx.lineWidth = 2.5;
-    ctx.setLineDash([5, 4]);
-    ctx.strokeStyle = '#c9851a';
-    ctx.stroke();
-    ctx.restore();
-  } else {
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = stroke;
-    ctx.stroke();
-  }
-
-  // Ticket outline (overlay): a bold teal border hugging the OUTSIDE of the car
-  // box — the unmistakable "yours to build" read on top of any level stroke. The
-  // ring is outset from the box centroid (so it never hides the claimable/
-  // affordable border) and thickens with weight, so overlapping ticket paths
-  // read as a heavier, hotter outline.
-  if (ticketWeight > 0) {
-    let cx = 0;
-    let cy = 0;
-    for (const p of c) { cx += p.x; cy += p.y; }
-    cx /= c.length; cy /= c.length;
-    const off = 2 + tw;                 // outset distance grows with weight
-    const ring = c.map((p) => {
-      const dx = p.x - cx;
-      const dy = p.y - cy;
-      const len = Math.hypot(dx, dy) || 1;
-      return { x: p.x + (dx / len) * off, y: p.y + (dy / len) * off };
-    });
-    ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(ring[0].x, ring[0].y);
-    for (let i = 1; i < ring.length; i++) ctx.lineTo(ring[i].x, ring[i].y);
-    ctx.closePath();
-    ctx.lineJoin = 'round';
-    ctx.lineWidth = 2.5 + tw;           // 3.5 at weight 1, up to 6.5
-    ctx.strokeStyle = glow;
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  // Pop flash: a brief white wash over the box that fades to nothing (flash→0),
-  // so the claim "lights up" then settles into the owner color underneath.
-  if (pop && pop.flash > 0) {
-    ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(c[0].x, c[0].y);
-    for (let i = 1; i < c.length; i++) ctx.lineTo(c[i].x, c[i].y);
-    ctx.closePath();
-    ctx.globalAlpha = Math.min(1, pop.flash);
-    ctx.fillStyle = '#ffffff';
-    ctx.fill();
-    ctx.restore();
-  }
-}
-
-// Draw the traveling pulse over every ticket path the viewer holds, and keep the
-// continuous driver in sync. For each ordered path we sum route lengths into a
-// total path length, place each route at its midpoint distance along the path,
-// then light it by the pure pulse model (anim.js): the `_-*-_` bump glides at a
-// CONSTANT velocity, so a longer path takes proportionally longer to loop. The
-// clock is performance.now() — the loop driver re-issues this paint each frame,
-// so the bump moves. In instant mode (reduced-motion / test) or with no paths /
-// no visible canvas, we draw nothing and STOP the driver: the static heat-map
-// underneath is the durable visual and the gate never couples to motion.
-function drawTicketPulses(ctx, layout, vm, t) {
-  try {
-    const canvas = ctx && ctx.canvas;
-    const hidden = canvas && typeof canvas.offsetParent !== 'undefined' && canvas.offsetParent === null;
-    const paths = vm && Array.isArray(vm.ticketPaths) ? vm.ticketPaths : [];
-    if (isInstantMode() || hidden || paths.length === 0) { syncPulseDriver(false); return; }
-
-    const byId = new Map();
-    for (const rl of layout.routes) byId.set(String(rl.id), rl);
-
-    const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
-    const glow = cssVar('--ticket-glow', '#0f8a9c');
-
-    for (const path of paths) {
-      const ids = path && Array.isArray(path.routeIds) ? path.routeIds : path;
-      if (!Array.isArray(ids) || ids.length === 0) continue;
-
-      // Lay the path out: each route occupies [acc, acc+len]; its center is the
-      // midpoint. The pulse position is measured in these path-distance units.
-      const segs = [];
-      let pathLength = 0;
-      for (const rid of ids) {
-        const rl = byId.get(String(rid));
-        if (!rl) continue;
-        const len = routeLength(rl.route) || 1;
-        segs.push({ rl, center: pathLength + len / 2 });
-        pathLength += len;
-      }
-      if (pathLength <= 0) continue;
-
-      for (const s of segs) {
-        const intensity = pulseIntensityAt(now, pathLength, s.center, {
-          velocity: PULSE_VELOCITY,
-          halfWidth: PULSE_HALF_WIDTH,
-        });
-        if (intensity <= 0.02) continue;
-        for (const box of s.rl.boxes) drawPulseBox(ctx, box, t, intensity, glow);
-      }
+    if (r.claimed) claimedRids.add(idStr);
+    g.dataset.claimed = r.claimed ? 'true' : 'false';
+    g.dataset.owner = r.claimed && r.ownerIndex != null ? String(r.ownerIndex) : '';
+    if (r.claimed && r.ownerIndex != null) {
+      g.style.setProperty('--owner-color', playerColor(r.ownerIndex));
+    } else {
+      g.style.removeProperty('--owner-color');
     }
-    syncPulseDriver(true);
-  } catch (_) { /* animation must never break a paint */ }
-}
 
-// Paint one car box as part of the traveling pulse: a bright wash whose opacity
-// and glow scale with the bump intensity, so the `*` peak reads brightest and
-// the `_` tails fade to nothing. Layered over the route + heat-map already drawn.
-function drawPulseBox(ctx, box, t, intensity, glow) {
-  const c = box.corners.map((pt) => applyTransform(pt, t));
-  ctx.save();
-  ctx.beginPath();
-  ctx.moveTo(c[0].x, c[0].y);
-  for (let i = 1; i < c.length; i++) ctx.lineTo(c[i].x, c[i].y);
-  ctx.closePath();
-  ctx.shadowColor = glow;
-  ctx.shadowBlur = 4 + 14 * intensity;     // brighter halo at the peak
-  ctx.globalAlpha = Math.min(1, 0.9 * intensity);
-  ctx.fillStyle = '#ffffff';
-  ctx.fill();
-  ctx.restore();
-}
+    const level = r.claimed ? 'none'
+      : (r.claimable && humanTurn) ? 'claimable'
+      : (r.affordable && showAfford) ? 'affordable'
+      : 'none';
+    g.dataset.level = level;
 
-// Paint the board as a map: a radial paper vignette (lighter middle → darker
-// edges) overlaid with a faint graticule for cartographic texture. All colors
-// come from the --map-* tokens.
-function drawBoardBackground(ctx, width, height) {
-  const land = cssVar('--map-land', '#e7ecdf');
-  const edge = cssVar('--map-land-edge', '#dadfca');
-  let bg = land;
-  try {
-    const g = ctx.createRadialGradient(
-      width / 2, height * 0.42, Math.min(width, height) * 0.08,
-      width / 2, height / 2, Math.max(width, height) * 0.72,
-    );
-    g.addColorStop(0, land);
-    g.addColorStop(1, edge);
-    bg = g;
-  } catch (_) { /* createRadialGradient may be absent in a stub ctx */ }
-  ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, width, height);
+    // Heat only on routes still to be built (a claimed route reads as owned).
+    const weight = r.claimed ? 0 : Math.min(r.ticketWeight || 0, 4);
+    g.dataset.ticketWeight = String(weight);
 
-  // Faint lat/long grid.
-  ctx.save();
-  ctx.strokeStyle = cssVar('--map-grid', '#d2dbc9');
-  ctx.lineWidth = 1;
-  ctx.globalAlpha = 0.55;
-  ctx.beginPath();
-  const step = 64;
-  for (let x = step; x < width; x += step) { ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, height); }
-  for (let y = step; y < height; y += step) { ctx.moveTo(0, y + 0.5); ctx.lineTo(width, y + 0.5); }
-  ctx.stroke();
-  ctx.restore();
-}
-
-// Rounded-rect path helper (uses native roundRect where available).
-function roundRectPath(ctx, x, y, w, h, r) {
-  if (typeof ctx.roundRect === 'function') { ctx.roundRect(x, y, w, h, r); return; }
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r);
-  ctx.arcTo(x, y, x + w, y, r);
-  ctx.closePath();
-}
-
-// A small city skyline marker (three buildings of varied height with lit
-// windows), drawn as an inline-SVG-style glyph straight to canvas — zero-dep and
-// far more legible as "a city" than a flat dot. Buildings are [dx, w, h] in
-// canvas px relative to the city point (dx from center x, all sharing a baseline
-// just below y so the cluster centers on the point). Colors come from --city-*
-// tokens. Returns the marker's right edge so the label can clear it.
-const CITY_BUILDINGS = [
-  [-14, 8, 15],
-  [-5, 10, 22],
-  [6, 8, 18],
-];
-const CITY_BASELINE = 8; // baseline offset below the city point (px)
-
-function drawCityIcon(ctx, x, y) {
-  const base = y + CITY_BASELINE;
-  const fill = cssVar('--city-fill', '#2b2f2b');
-  const ring = cssVar('--city-ring', '#ffffff');
-  const win = cssVar('--city-window', '#e3b505');
-
-  // White halo/ring with a soft drop shadow: a rounded outline of the silhouette
-  // so the dark buildings stay legible against the map's land tones.
-  ctx.save();
-  ctx.shadowColor = 'rgba(0,0,0,0.30)';
-  ctx.shadowBlur = 4;
-  ctx.shadowOffsetY = 1;
-  ctx.strokeStyle = ring;
-  ctx.lineWidth = 4;
-  ctx.lineJoin = 'round';
-  ctx.beginPath();
-  for (const [dx, w, h] of CITY_BUILDINGS) roundRectPath(ctx, x + dx, base - h, w, h, 2);
-  ctx.stroke();
-  ctx.restore();
-
-  // Building bodies.
-  ctx.save();
-  ctx.fillStyle = fill;
-  ctx.beginPath();
-  for (const [dx, w, h] of CITY_BUILDINGS) roundRectPath(ctx, x + dx, base - h, w, h, 2);
-  ctx.fill();
-  ctx.restore();
-
-  // Lit windows — a small grid of accent squares so the marker reads as a city.
-  ctx.save();
-  ctx.fillStyle = win;
-  const inset = 2;
-  const ww = 2;
-  const gap = 1.8;
-  for (const [dx, w, h] of CITY_BUILDINGS) {
-    const left = x + dx + inset;
-    const right = x + dx + w - inset;
-    const cols = w >= 9 ? 2 : 1;
-    for (let fy = base - h + inset + 0.6; fy + ww <= base - inset; fy += ww + gap) {
-      for (let c = 0; c < cols; c++) {
-        const wx = left + c * (ww + gap);
-        if (wx + ww <= right) ctx.fillRect(wx, fy, ww, ww);
-      }
+    const initial = g.querySelector('.owner-initial');
+    if (initial) {
+      initial.textContent = r.claimed
+        ? ownerInitial(r.ownerName, r.ownerIndex != null ? r.ownerIndex : 0)
+        : '';
     }
   }
-  ctx.restore();
 
-  // Rightmost building edge — where the label should start clearing.
-  let edge = -Infinity;
-  for (const [dx, w] of CITY_BUILDINGS) edge = Math.max(edge, dx + w);
-  return x + edge;
+  // Pop any route claimed since the last render.
+  triggerPops(claimedRids);
+
+  // Traveling ticket pulse over the viewer's ordered paths.
+  pulseSegs = computePulseSegs(vm);
+  syncPulseDriver(pulseSegs.length > 0 && !isInstantMode());
+
+  // Observable State Contract — the board has rendered real elements.
+  svg.dataset.painted = 'true';
+  syncAnimFlags();
 }
 
-function drawCity(ctx, x, y, name) {
-  const rightEdge = drawCityIcon(ctx, x, y);
-
-  if (name) {
-    ctx.font = '600 13px system-ui, sans-serif';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    const label = String(name);
-    const tw = ctx.measureText(label).width;
-    const plateX = rightEdge + 5;
-    // Rounded label plate for legibility against the map.
-    ctx.save();
-    ctx.beginPath();
-    roundRectPath(ctx, plateX, y - 10, tw + 9, 20, 5);
-    ctx.fillStyle = cssVar('--label-plate', '#ffffff');
-    ctx.globalAlpha = 0.92;
-    ctx.fill();
-    ctx.restore();
-    ctx.fillStyle = cssVar('--ink', '#111');
-    ctx.fillText(label, plateX + 4, y + 1);
-  }
-}
-
-// Export some accessors for main.js convenience.
-export { getCities, getRoutes, routeId, routeLength, routeFrom, routeTo, cityId, cityName, claimedOwners };
+// Re-export the pure accessors for controller convenience (main.js).
+export { getCities, getRoutes, routeId, routeLength, routeFrom, routeTo, cityId, cityName };

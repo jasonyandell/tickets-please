@@ -48,8 +48,10 @@ eyeballing the page.
 ## Validation — the crisp Y (prove it, don't claim it)
 `npm run test:e2e` must pass, and that means ALL of:
 - **Zero `pageerror`s and zero `console.error`s** during load + New Game.
-- The canvas the app draws on **exists** and **has non-trivial painted content**
-  (sampled pixels show > 3 distinct colors — not a flat fill, not blank).
+- The board **exists as real structure**: `#map` (SVG) has `dataset.painted`
+  set AND real elements — `[data-route-id]` route groups and
+  `.city[data-city-id]` markers matching the view-model (no pixel sampling;
+  the board is element-based since the V0 SVG substrate).
 - The side panel is **populated** (has child elements / non-empty text).
 - A **New Game** renders a board with at least one clickable route region.
 - `artifacts/board.png` exists and visibly shows the board (final human check).

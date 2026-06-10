@@ -29,7 +29,7 @@ import {
   routeTo,
   routeLength,
   routeColor,
-} from './layout.js';
+} from './geometry.js';
 
 // ---------------------------------------------------------------------------
 // Defensive state accessors (mirror the ones that lived in main.js)
