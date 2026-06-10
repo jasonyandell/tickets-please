@@ -282,3 +282,70 @@ mention. **Counts re-run:** `npm test` → **199/199** (persist 12→**6** after
 `autoReloadDue` tests went; all others unchanged); `npm run test:e2e` → **13/13**.
 **Lint:** no orphans, no dangling `[[links]]`, every page reachable from [[index]].
 → [[ui]], [[deployment]], [[testing]].
+
+---
+
+### 2026-06-10 — Overhaul V0: SVG substrate · commit `136a6b8`
+**canvas → element-based board.** Every route is now a `g.route[data-route-id]`
+element; every city is `g.city[data-city-id]`. Game state rides on `data-*`
+attributes (`data-claimed`, `data-owner`, `data-level`, `data-ticket-weight`);
+appearance is entirely CSS-token-driven, zero JS color math on the render path.
+The board uses a fixed **viewBox 1200×760** — `main.js` loses all `resize()` /
+`devicePixelRatio` code, killing the hidden-canvas blank-board race. `layout.js`
+replaced by pure **`geometry.js`** (15 tests at this point; no hit-testing —
+clicks land on real DOM nodes). Anim drivers now mutate CSS custom properties
+(`--pop-scale`, `--pop-flash`, `--pulse`) instead of painting canvas pixels.
+Observable State Contract kept: `#map dataset {painted, cities, animating,
+popCount}`, `window.__APP__`, `window.__BOARD__`.
+e2e **strengthened**: new structural assertions (one `[data-route-id]` per vm
+route; `.city[data-city-id]` count === `dataset.cities`; a claim flips
+`data-claimed`/`data-owner` on the live node).
+**One real bug the suite caught:** removing `render.js`'s old
+`setBoardRenderContext` import silently dropped `game/board.js` from the module
+graph → no `window.__BOARD__`, 5 e2e specs red. Fix: explicit side-effect import
+in `main.js`. Lesson: a module that self-mounts on import is an invisible
+dependency — re-check the module graph when refactoring its importer, not just
+the API. **Counts (observed before commit):** 203/203 unit, 13/13 e2e (6.5s).
+→ [[ui]], [[testing]], [[architecture]], [[browser-verify]].
+
+### 2026-06-10 — Overhaul V1: continuous track lines · commit `5c24416`
+Added **`routeLine(route, map)`** to `geometry.js`: a city-to-city line sharing
+the route's perpendicular offset via the new single-source **`parallelOffset()`**
+(so double routes render as clean parallel tracks; the function is now used by
+BOTH `routeSegments` and `routeLine`, guaranteeing they always agree). Rendered
+as `<line class="track">` under each route's car slots; a claimed route's rail
+takes `--owner-color` so an owned network reads as one connected line. New
+`--track` design token. +4 geometry tests: endpoints at cities, symmetric double
+offsets, slots provably ON the track line, missing-city returns null.
+**Counts (observed before commit):** 207/207 unit, 13/13 e2e (6.3s).
+→ [[ui]], [[testing]].
+
+### 2026-06-10 — Overhaul V2: transit theme · commit `2c9840d`
+Board reads as a **metro map**. Three visual additions, all derived from the map
+data — no geography assets: (1) **water vignette** — radial gradient using
+`--map-water` tokens, letterbox bars match so the viewBox edge disappears;
+(2) **landmass** — `convexHull(cities)` inflated + rounded by a fat same-color
+stroke (`path.landmass`) so water shows around the network; (3) **metro
+interchange dots** — `circle.dot` (ringed white disc) + `rect.label-plate` chip
+replace the skyline glyphs entirely. Cooler track/grid tones; removed now-unused
+`--city-window` token and all skyline drawing code. +2 pure hull tests (every
+city inside; deterministic; degenerate-safe).
+**Counts (observed before commit):** 209/209 unit (incl. contrast pairs on
+retuned tokens), 13/13 e2e (6.3s).
+**Wiki debt recorded:** the pulse rAF driver does not stop when the player
+navigates to the menu mid-game (battery-only nit; no correctness or test
+impact; deliberate deferral). → [[ui]], [[testing]], [[design-decisions]].
+
+### 2026-06-10 — Wiki sweep #3 (lint)
+Reconciled wiki to Overhaul V0–V2. Pages changed: [[ui]] (full rewrite of board
+section), [[architecture]] (render-pipeline description, SVG projection +
+geometry.js), [[testing]] (209 unit / 13 e2e; geometry.test.js entry replacing
+layout.test.js; structural SVG e2e hooks; cities.spec skyline → metro dots),
+[[browser-verify]] (structural SVG validation gate, 2026-06-10 skill-log entry),
+[[design-decisions]] (SVG substrate decision added), [[map]] (canvas coordinates
+→ geometry.js fitTransform), [[workflows]] (canvas → browser renderer), [[index]]
+(ui one-liner updated).
+**Counts re-run:** `npm test` → **209/209** (~2.5s wall time, observed). `npm
+run test:e2e` coordinator-observed: **13/13** (~6.3s).
+**Lint:** no orphan pages, no dangling `[[links]]` (only the intentional literal
+examples in [[CLAUDE]]), every page reachable from [[index]].

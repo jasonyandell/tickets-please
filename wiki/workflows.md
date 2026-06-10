@@ -18,7 +18,7 @@ pieces compose.
 3. **Engine implementation (pipeline).** `rules.js`, `scoring.js`, `game.js` —
    each implemented, then its `node:test` suite written and run, as a pipeline so
    a finished module starts testing while others are still being written.
-4. **Clients (parallel).** The [[ai]] bot and the [[ui]] canvas renderer.
+4. **Clients (parallel).** The [[ai]] bot and the [[ui]] browser renderer.
 5. **Adversarial correctness review.** Multiple reviewers check the rules against
    the official game ("make no mistakes"); findings are verified, then fixed.
 6. **Wiki maintenance (every phase).** Pages and [[log]] are updated as the

@@ -11,21 +11,26 @@ and have the skill **document and improve itself** every time it hits a blocker.
 `npm run test:e2e` (Playwright, **dev-only** — the shipped game stays
 zero-dependency) builds the site, serves the built `dist/`, loads it in real
 Chromium, and asserts FACTS through the **Observable State Contract** rather than
-inspecting the canvas:
+inspecting pixels:
 - zero app errors (page errors / non-favicon HTTP failures),
 - the app reaches each expected screen (`window.__APP__.screen`),
 - a scripted play-through advances real structured state — `lastAction`, hand
   counts, route ownership, standings — read from `window.__APP__.viewModel` and
   stable `[data-testid]` / `button[data-action]` hooks,
-- the board genuinely painted, via the **single** smoke flag
-  `canvas.dataset.painted === "true"` (the only canvas check anywhere),
+- **structural SVG assertions** (enabled by the V0 SVG substrate — 2026-06-10):
+  one `g[data-route-id]` per view-model route; `.city[data-city-id]` count ===
+  `#map dataset.cities`; a claim flips `data-claimed`/`data-owner` on the live
+  DOM node,
+- the board genuinely painted, via the smoke flag
+  `#map dataset.painted === "true"` (the only paint-proof check anywhere),
 - and it saves `artifacts/board.png` as human-checkable evidence.
 
 > **Canvas color / pixel sampling is banned.** The original check sampled the
 > canvas for "hundreds of distinct colors"; it was flaky and slow, and a green
-> sample with a wrong picture proves nothing. It was replaced mid-stream by the
-> deterministic, contract-based play-throughs above — see [[testing]] and [[log]]
-> (2026-06-06).
+> sample with a wrong picture proves nothing. It was replaced by deterministic,
+> contract-based play-throughs, and the SVG substrate (2026-06-10) further
+> upgraded the validation gate to structural DOM assertions — see [[testing]] and
+> [[log]] (2026-06-06, 2026-06-10).
 
 ## Why it exists
 A null DOM ref or a 404 at load blanks the whole page, and **no Node unit test

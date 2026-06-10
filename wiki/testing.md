@@ -6,8 +6,8 @@ is verified through a **deterministic state contract** — never by sampling
 pixels. Unit tests use Node's built-in runner — **zero dependencies**:
 
 ```
-npm test           # node --test over tests/*.test.js   (199 tests)
-npm run test:e2e   # Playwright contract play-throughs   (13 tests, dev-only)
+npm test           # node --test over tests/*.test.js   (209 tests, ~2.5s)
+npm run test:e2e   # Playwright contract play-throughs   (13 tests, ~6.3s, dev-only)
 npm run validate   # check the map against its invariants
 node tools/simulate.js [games] [seed]   # play full AI-vs-AI games
 ```
@@ -16,7 +16,7 @@ node tools/simulate.js [games] [seed]   # play full AI-vs-AI games
 > so the script globs `tests/*.test.js` explicitly (a shell glob, so CI on Node
 > 20 works too — see [[log]] 2026-05-30 deploy corrections).
 
-## Unit suites (199 tests total)
+## Unit suites (209 tests total)
 - **`scoring.test.js`** (13) — route points, ticket completion, longest path,
   `finalScores` incl. longest-path ties. See [[scoring]].
 - **`rules.test.js`** (34) — `canClaimRoute` (colored/gray/wild, trains, double
@@ -26,8 +26,11 @@ node tools/simulate.js [games] [seed]   # play full AI-vs-AI games
   ticket flow, end-game trigger and winner, no-mutation, determinism.
 - **`ai.test.js`** (8) — the bot always returns a legal move, resolves tickets,
   claims usefully, is deterministic. See [[ai]].
-- **`layout.test.js`** (11) — pure UI geometry (box counts, hit-testing, double
-  routes). See [[ui]].
+- **`geometry.test.js`** (19) — pure UI geometry (`geometry.js`): slot counts +
+  placement, double-route offsets (symmetric; `parallelOffset` used as single
+  source by both slots and track line), `routeLine` endpoints at cities, missing-
+  city null, `convexHull` (every city inside; deterministic + degenerate-safe).
+  Replaces the old `layout.test.js` (11). See [[ui]].
 - **`viewModel.test.js`** (37) — the **pure UI derivation** (`buildViewModel`):
   derived actions/claimability + per-route blocked reasons, **hotseat privacy
   masking** (active human revealed, opponents counts-only), live standings &
@@ -98,8 +101,12 @@ inspecting the canvas:
 - **Stable DOM hooks** — `[data-screen]`, `[data-testid="…"]` (prompt,
   standings, scoreboard, pass-device, …), `button[data-action]`/`data-reason`,
   and `data-*` attributes (e.g. `rank-N` carries `data-rank`/`data-leader`).
-- **One canvas smoke flag** — `canvas.dataset.painted === "true"`, set by
-  `render.js` after a real paint. This is the *only* canvas check anywhere.
+- **SVG structural hooks** — `g[data-route-id]` (one per view-model route),
+  `g[data-city-id]` (one per city), `data-claimed`/`data-owner` that flip on
+  the live DOM node when a route is claimed. The SVG substrate makes board
+  structure directly assertable without pixel sampling.
+- **One smoke flag** — `#map dataset.painted === "true"`, set by `render.js`
+  after a real SVG render pass. This is the only paint-proof check anywhere.
 
 **Canvas color / pixel sampling is banned** — it was flaky and slow, and a green
 sample with a wrong picture proves nothing. It has been fully replaced by
@@ -129,8 +136,9 @@ contract above (plus screenshots as human-checkable evidence):
   `false`, asserting a durable fact rather than sleeping on a frame.
 - **`pulse.spec.js`** (1) — the viewer's ticket paths are **ordered source→dest**
   and the heat-map is **static** in instant mode (no motion the gate depends on).
-- **`cities.spec.js`** (1) — cities render as **skyline icons** and the
-  city-count contract hook matches the [[map]] (no pixel sampling).
+- **`cities.spec.js`** (1) — cities render as **metro station dots** and the
+  city-count contract hook (`#map dataset.cities`) matches the [[map]] city
+  count (structural assertion, no pixel sampling).
 - **`responsive.spec.js`** (2 + artifacts) — at 1024×700 and 1280×720 the layout
   has no overflow and key elements stay in-viewport; plus an **artifacts** run
   that saves setup + game-over screenshots for human review.

@@ -1,11 +1,11 @@
 # UI
 
-A zero-dependency, browser-native UI: HTML5 **Canvas** + ES modules, no
-framework. The shipped game has no runtime dependencies. Launch with
-`npm run serve` — it builds the static site into `dist/` (via `tools/build.js`)
-and serves *that*, so local play, the [[browser-verify|e2e suite]], and
-production ([[deployment]]) all exercise the identical artifact. See
-[[architecture]] for how it relates to the engine.
+A zero-dependency, browser-native UI: **SVG/DOM** + ES modules, no framework.
+The shipped game has no runtime dependencies. Launch with `npm run serve` — it
+builds the static site into `dist/` (via `tools/build.js`) and serves *that*, so
+local play, the [[browser-verify|e2e suite]], and production ([[deployment]]) all
+exercise the identical artifact. See [[architecture]] for how it relates to the
+engine.
 
 ## Screen architecture
 The page is no longer one always-on pane. `app.js` is a tiny **screen router**
@@ -23,7 +23,7 @@ over `<section data-screen>` elements — one per screen
               menu · setup · GAME · gameover
                                   │
                  ┌────────────────┴────────────────┐
-            game/board.js (canvas)          game/panel.js (HUD)
+            game/board.js (SVG)            game/panel.js (HUD)
             hover/claim + #map               prompt · actions · standings
 ```
 
@@ -35,6 +35,7 @@ over `<section data-screen>` elements — one per screen
   `scoring.ticketComplete` / `longestPath`) to answer "what's legal / affordable
   / complete right now?" and **owns hotseat privacy masking** (opponents are
   reduced to counts only). Both the UI and the e2e suite read this object.
+  Imports pure geometry accessors from `geometry.js` (city/route accessors).
 - `app.js` — the screen router + the `window.__APP__` contract surface.
 - `screens/menu.js` — landing screen: branding, **Play**, and a How-to-play
   panel that teaches the full ruleset (starting-ticket selection, the turn
@@ -48,7 +49,7 @@ over `<section data-screen>` elements — one per screen
 - `screens/passdevice.js` — the hotseat **pass-the-device** interstitial: a
   full-screen opaque overlay shown between two consecutive *human* turns so the
   incoming player can't glimpse the previous hand. Intentionally NOT a router
-  screen — the game stays mounted beneath it (no canvas resize/repaint race).
+  screen — the game stays mounted beneath it (no resize/repaint race).
 - `game/panel.js` — the in-game side **HUD**, a pure view over the published
   view-model: the turn banner + next-step prompt, the action bar (each button
   disabled-with-reason) including **↶ Undo / ↷ Redo** (gated by
@@ -58,10 +59,14 @@ over `<section data-screen>` elements — one per screen
   blocks (privacy-masked, wild hand-pips also rainbow), and the log. There is no
   card-color legend — colors are self-evident on the cards, so the panel dropped
   it for space.
-- `game/board.js` — canvas **interaction + route-clarity** layer: hover (or tap)
+- `game/board.js` — SVG **interaction + route-clarity** layer: hover (or tap)
   any route and a tooltip near the cursor shows its cost, whether you can claim
-  it, and — when you can't — exactly why. Reads `vm.routes` + live geometry;
+  it, and — when you can't — exactly why. Routes are real DOM elements
+  (`g[data-route-id]`), so "which route is under the cursor" is plain
+  `event.target.closest()` — the old canvas hit-testing (transform inversion +
+  point-in-polygon) is gone entirely. Reads `vm.routes` + live DOM geometry;
   exposes `window.__BOARD__` (a separate inspection surface) for the e2e suite.
+  Claiming a route is still applied by `main.js`.
 - `main.js` — the thin controller: wires the engine + [[ai]] + renderer, owns
   the engine `state`, builds & publishes the view-model each render, routes
   between screens, records `lastAction`, drives AI turns on a timer, gates the
@@ -70,19 +75,28 @@ over `<section data-screen>` elements — one per screen
   Cmd/Ctrl+Z / Cmd/Ctrl+Shift+Z) to the recorder's playhead. It also persists the
   game after every applied action and restores it on boot (see *Persistence*),
   and exposes the **⟳ Reload** button (`doReload`).
-- `render.js` — draws the [[map]] onto the canvas (cities as **skyline icons** —
-  a three-building glyph with a white halo + lit windows, sized to fill the space
-  and balance the route boxes, far more legible than a flat dot — routes as
-  runs of colored boxes, claimed routes recolored to the owner + a small **owner
-  token** — a light disc ringed in the owner's color bearing their initial,
-  double routes as offset parallel lines). Also paints the always-on **weighted
-  ticket heat-map**: routes serving the viewer's incomplete tickets get a
-  **bold, weight-graded teal outline** whose width + opacity scale with
-  `vm.ticketRouteWeights[id]`, so a route on two tickets' shortest paths reads
-  hotter than one (`drawBox`'s `ticketWeight`), and a **traveling `_-*-_` pulse**
-  that glides source→dest along each ticket path (see *Traveling ticket pulse*
-  below). Asks `anim.js` for all motion params; sets the single smoke
-  flag `canvas.dataset.painted`.
+- `render.js` — the **SVG/DOM renderer**: builds the board skeleton once per
+  `(svg, map)` — every route is a `g.route[data-route-id]` element, every city
+  is a `g.city[data-city-id]` element — then on each render pass mirrors the
+  view-model onto `data-*` attributes only (no element re-creation). Appearance
+  is entirely **CSS-token-driven**: design tokens in `style.css` (`:root`) +
+  data-attribute selectors (`[data-color]`, `[data-claimed]`, `[data-level]`,
+  `[data-ticket-weight]`) determine every color and opacity. The board uses a
+  **fixed viewBox 1200×760** — no `resize()`, no `devicePixelRatio` code
+  anywhere; CSS scales the SVG to any screen for free, eliminating the
+  hidden-canvas blank-board race of the old canvas era. See *Board details*
+  below for V1/V2 features. Anim drivers mutate CSS custom properties
+  (`--pop-scale`, `--pop-flash`, `--pulse`) on route groups; `style.css` turns
+  those into transforms/opacity. Sets `svg.dataset.painted = "true"` after a
+  real render (the Observable State Contract smoke flag).
+- `geometry.js` — **pure, testable geometry**: successor to `layout.js`. Computes
+  car-slot rectangles (`routeSegments`), the perpendicular-offset single source
+  (`parallelOffset` — used by both slots and the track line so they always agree),
+  the continuous track line (`routeLine`), the convex-hull landmass
+  (`convexHull`), the viewport transform (`fitTransform`/`applyTransform`), and
+  all defensive map accessors (`getCities`/`getRoutes`/`cityId`/`routeId`/…). No
+  DOM; no hit-testing (clicks land on real SVG nodes). Fully unit-testable under
+  Node (tests/geometry.test.js, 19 tests).
 - `anim.js` — the **verification-first animation kit** (see *How we test
   animations* below): a PURE, timer-free frame model (`frame`/`pulse`/`popParams`
   for the claimed-route pop; `pulseCenter`/`bump`/`pulseIntensityAt` for the
@@ -99,11 +113,54 @@ over `<section data-screen>` elements — one per screen
   append-only action **tape** + a **cursor** and computes state by *replaying*
   the tape prefix through the engine reducer. No DOM, timers, or globals; the
   reducer is injected, so it unit-tests directly.
-- `layout.js` — **pure, testable geometry**: route "car" boxes, `hitTestRoute`,
-  fit/transform helpers. No DOM, so it unit-tests cleanly.
-- `style.css` — layout and the player/card color palette. The **wild /
+- `style.css` — layout, design tokens, and the board visual theme. CSS custom
+  properties (`:root`) drive every color the board and panel render: card colors
+  (`--card-*`), owner colors (`--owner-color` set inline per route), ticket-weight
+  halo (`--ticket-weight-*`), animation properties (`--pop-scale`, `--pop-flash`,
+  `--pulse`), and the transit-theme water/landmass tokens. The **wild /
   locomotive** card is a distinctive multicolor **rainbow chip** (`.card.wild`,
   `.pip.wild`), never a flat gray — so it always reads as "any color".
+
+## Board details (V0 → V1 → V2)
+
+### V0 — SVG substrate (Overhaul V0, 2026-06-10)
+The canvas renderer was replaced by a pure SVG projection. Every route, car
+slot, and city is a **real DOM element**:
+- `g.route[data-route-id]` — one per route in the view-model. Game state rides
+  on `data-claimed`, `data-owner`, `data-level` (`claimable | affordable |
+  none`), and `data-ticket-weight`; appearance is entirely CSS-driven.
+- `g.city[data-city-id]` — one per city.
+- The board's fixed internal coordinate system is **viewBox 1200×760**; CSS
+  scales the SVG to any screen. There is no `resize()`, no `devicePixelRatio`
+  code, and no hidden-element sizing race anywhere.
+- `board.js` interaction uses `event.target.closest('[data-route-id]')` — the
+  old point-in-polygon hit-testing and inverse transforms are gone.
+
+### V1 — Continuous track lines (Overhaul V1, 2026-06-10)
+Each route now has a **`<line class="track">`** drawn city-to-city under the car
+slots, sharing the same perpendicular offset (`parallelOffset()` — single source
+used by both `routeLine` and `routeSegments` so they always agree). A claimed
+route's rail takes the owner's color (`--owner-color`), so an owned network reads
+as one connected line of rail instead of floating disconnected slots.
+
+### V2 — Transit theme (Overhaul V2, 2026-06-10)
+The board reads as a metro map:
+- **Water vignette**: a radial gradient (`#map-vignette`) fills the board
+  background using `--map-water` CSS tokens; letterbox bars match so the viewBox
+  edge disappears.
+- **Landmass**: `convexHull(cities)` inflated + rounded by a fat same-color
+  stroke (`path.landmass`) — derived from the map itself, no geography assets.
+  Water shows around it; it grounds any map without pretending to be an accurate
+  coastline.
+- **Metro station dots**: city markers are now **ringed white discs** (`circle.dot`)
+  — the transit-map interchange idiom. Replaced the skyline glyphs.
+- **Label chips**: city names sit on a rounded plate (`rect.label-plate`) beside
+  the dot, clearing it cleanly.
+- Cooler track/grid tones, removed the now-unused `--city-window` token.
+
+> **Known deferred issue (battery-only nit):** the pulse rAF driver does not
+> stop when the player navigates to the menu mid-game. It will stop on a fresh
+> game start. Deliberate deferral; no correctness or test impact.
 
 ## The guided turn loop
 The UI's job is **legibility** — at every moment the player can tell whose turn
@@ -127,7 +184,7 @@ Hovering a route surfaces its **cost**, **claimability**, and the blocked
 why a route is unavailable. The tooltip distinguishes *claimable* (legal now,
 click to claim) from merely *affordable* (you hold the cards but a phase/rule
 blocks it). A blocked click pins the reason briefly. Claiming itself is still
-applied by `main.js`'s canvas click handler.
+applied by `main.js`'s click handler.
 
 ### Weighted ticket heat-map (always on)
 Orthogonal to claimability, the board is always a **"where to build first" map**.
@@ -136,11 +193,12 @@ map, routeOwner)` → `{ routeId: count }`): for each of the viewer's
 **incomplete** destination tickets, it shortest-paths from end to end over a
 graph where *owned* routes are free connectors (weight 0), *unclaimed* routes
 cost their length, and *opponents'* routes are impassable — then counts how many
-tickets' paths cross each route. `render.js:drawBox` paints those routes with a
-**bold, weight-graded teal outline** hugging the cars whose width + opacity
-**scale with the weight** (capped), so a route serving two tickets at once reads
-hotter than one. Completed tickets contribute nothing. This *supersedes* the
-earlier flat ticket-route highlight: overlap now reads as intensity, not on/off.
+tickets' paths cross each route. The `data-ticket-weight` attribute on each
+`g.route` drives a **bold, weight-graded teal outline** in CSS whose width +
+opacity scale with the weight (capped at 4), so a route serving two tickets at
+once reads hotter than one. Completed tickets contribute nothing. This
+*supersedes* the earlier flat ticket-route highlight: overlap now reads as
+intensity, not on/off.
 
 **Who the heat-map shows (Batch 9 — stays lit during AI turns).** The "viewer"
 is decoupled from strict turn-gating so the human's own map doesn't blank out
@@ -163,15 +221,17 @@ the end — so a longer path takes proportionally longer to traverse. The motion
 a pure function of time: `viewModel.js:ticketOrderedPaths` (`vm.ticketPaths`)
 gives each path's routes **oriented source→dest** (same Dijkstra as the weights),
 and `anim.js`'s `pulseCenter`/`bump`/`pulseIntensityAt` light each
-point by its wrap-aware distance to the moving center. `render.js:drawTicketPulses`
-runs off the single continuous `createLoopAnimator` rAF driver. It's **static in
-reduced-motion / test** (`isInstantMode`) — the durable read is the static
-heat-map, so the gate never depends on motion — and privacy-scoped identically to
-the heat-map (a pulse never traces a hidden opponent ticket).
+point by its wrap-aware distance to the moving center. The driver sets `--pulse`
+on each route's CSS custom property; `style.css` turns that into opacity on the
+`car-wash` overlay. It's **static in reduced-motion / test** (`isInstantMode`) —
+the durable read is the static heat-map, so the gate never depends on motion —
+and privacy-scoped identically to the heat-map (a pulse never traces a hidden
+opponent ticket).
 
-A claimed route is recolored to its owner and stamped with a small **owner
-token** — a light disc ringed in the owner's color carrying their initial — so
-ownership is legible even where two players' colors are close.
+A claimed route takes `--owner-color` on its track line and car slots, and is
+stamped with a small **owner mark** — a light disc ringed in the owner's color
+bearing their initial (`.owner-mark`) — so ownership is legible even where two
+players' colors are close.
 
 ## Undo/redo: the recorder/player model
 Undo/redo is a **video recorder over the deterministic engine** (`history.js`),
@@ -244,19 +304,25 @@ Pure unit tests are the primary gate (see [[testing]]):
   heat-map (overlap accumulates; lit for the lone human even on an AI turn; null
   for the inactive hotseat human), the ordered source→dest ticket paths, no
   mutation, JSON round-trip.
-- `tests/layout.test.js` (11) — the **pure geometry** (box counts, hit-testing,
-  double routes).
+- `tests/geometry.test.js` (19) — the **pure geometry** (`geometry.js`): slot
+  counts/placement, double-route offsets (symmetric; slots provably on the track
+  line), `routeLine` endpoints at cities, `convexHull` (every city inside;
+  deterministic + degenerate-safe). Replaces the old `layout.test.js` (11 tests).
 - `tests/history.test.js` (9) — the **undo/redo recorder**: replay-of-prefix,
   undo skips AI to the previous human action, redo, and branch-on-new-action.
 - `tests/anim.test.js` (22) — the **pure frame model** (frame/pulse/pop +
-  traveling-pulse maths: endpoints, peak, monotonic, clamp, wrap) and both rAF
-  **drivers** under a fake clock (start/retarget/cancel/settle; loop start/stop),
-  with no real timers.
+  traveling-pulse maths: endpoints, peak, monotonic, clamp, wrap-around) and both rAF
+  **drivers** under a fake clock + no-op raf
+  (`createPopAnimator` start/retarget/cancel/settle; `createLoopAnimator`
+  start/stop/idempotent) with NO real timers. The pattern is documented above
+  ("How we test animations"). See [[testing]].
 - `tests/persist.test.js` (6) — **serialize/deserialize** (recipe round-trip,
-  reject corrupt/foreign/old saves without throwing) and **restore-by-replay**.
+  reject corrupt/foreign/old-version saves without throwing) and **restore-by-replay**.
 
 Real-browser behaviour is proven by the **contract-based** e2e suite
 (`npm run test:e2e`, Playwright, dev-only) — it drives scripted play-throughs and
-asserts structured state via `window.__APP__` + `data-testid` hooks, with a single
-`canvas.dataset.painted` smoke flag. **Canvas color/pixel sampling is banned**
-(flaky + slow). See [[browser-verify]].
+asserts structured state via `window.__APP__` + `data-testid` hooks. The SVG
+substrate enables structural assertions: one `g[data-route-id]` per view-model
+route, `.city[data-city-id]` count === `#map dataset.cities`, a claim flips
+`data-claimed`/`data-owner` on the live DOM node. **Canvas color/pixel sampling
+is banned** (flaky + slow). See [[browser-verify]].

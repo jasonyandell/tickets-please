@@ -23,10 +23,20 @@ Inside the UI the data path runs through **one pure derivation layer**:
   engine state ──▶ viewModel.js (PURE buildViewModel) ──▶ window.__APP__.viewModel
                                                           │
                               ┌───────────────────────────┴───────────────┐
-                          game/panel.js (HUD)                   game/board.js (canvas)
+                          game/panel.js (HUD)                   game/board.js (SVG)
                               renders viewModel                    renders viewModel
                           (the e2e suite reads the SAME object — see [[testing]])
 ```
+
+`render.js` is a **pure SVG projection**: it builds an element skeleton once per
+`(svg, map)` — `g.route[data-route-id]` / `g.city[data-city-id]` — then on each
+refresh mirrors the view-model onto `data-*` attributes only. Appearance lives
+entirely in `style.css` CSS tokens; animation drivers mutate CSS custom
+properties (`--pop-scale`, `--pop-flash`, `--pulse`). The board uses a fixed
+viewBox 1200×760; CSS scales it to any screen — no `resize()`, no
+`devicePixelRatio` code anywhere. `geometry.js` (successor to `layout.js`)
+supplies the pure slot/transform math; `viewModel.js` imports defensive map
+accessors from it.
 
 ## Modules (`src/engine/`)
 - `rng.js` — seeded PRNG + shuffle. The only source of randomness. See
@@ -56,7 +66,7 @@ Inside the UI the data path runs through **one pure derivation layer**:
   - `app.js` — screen router (`menu | setup | game | gameover`) + the
     `window.__APP__` Observable State Contract.
   - `screens/*` — per-screen DOM (`menu`, `setup`, `gameover`, `passdevice`).
-  - `game/panel.js` (HUD) + `game/board.js` (canvas interaction) — pure views
+  - `game/panel.js` (HUD) + `game/board.js` (SVG interaction) — pure views
     over the view-model.
   - `history.js` (undo/redo) **and** `persist.js` (save/reload) share **one
     record/replay core**: the seed + an append-only action **tape** fully
@@ -69,8 +79,9 @@ Inside the UI the data path runs through **one pure derivation layer**:
     `elapsed` (route-claim pop + the traveling ticket pulse) plus isolated,
     clock-injectable rAF drivers, with an instant mode for test/reduced-motion.
     No DOM. See [[ui]] + [[testing]].
-  - `main.js` — thin controller wiring engine + AI + renderer; `render.js` +
-    `layout.js` — canvas drawing + pure geometry.
+  - `main.js` — thin controller wiring engine + AI + renderer; `render.js` —
+    SVG/DOM board renderer; `geometry.js` — pure geometry (successor to
+    `layout.js`).
 
 ## Principles
 - **Pure & immutable.** Reducers return new state; never mutate inputs.

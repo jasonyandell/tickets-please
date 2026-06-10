@@ -33,4 +33,5 @@ lives in `src/engine/map.js` as `MAP` and `TICKETS`, in the format specified by
   so every ticket is achievable.
 
 See [[game-rules]] for how routes and tickets are used in play, [[scoring]] for
-points, and [[ui]] for how the board is drawn (`x,y` are canvas coordinates).
+points, and [[ui]] for how the board is drawn (`x,y` are abstract layout
+coordinates fitted into the SVG viewBox by `geometry.js:fitTransform`).

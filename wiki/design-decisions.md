@@ -26,6 +26,17 @@ testability, replays, and look-ahead AI for free. See [[determinism]].
 One-way data flow (clients emit actions, engine reduces, UI renders) keeps each
 part independently testable and replaceable. See [[architecture]].
 
+## SVG substrate — structure, not pixels
+The board is a **pure SVG projection of the view-model**: every route is a
+`g[data-route-id]`, every city a `g[data-city-id]`, and all appearance lives in
+CSS design tokens + data-attribute selectors. Game state rides on `data-*`
+attributes; the renderer only flips attributes, never re-creates elements.
+This buys: (1) CSS-driven theming with zero JS changes, (2) e2e structural
+assertions on real DOM nodes (no pixel sampling, no hit-testing geometry), and
+(3) a fixed viewBox that scales to any screen without `resize()`/`dpr` code —
+eliminating the hidden-canvas blank-board race entirely. **Screenshots are for
+human taste, never gates.**
+
 ## Built with workflows
 Per the brief, much of the implementation is produced by orchestrated agents
 working against `CONTRACT.md`, then adversarially verified. See [[workflows]].
