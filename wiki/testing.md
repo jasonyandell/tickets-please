@@ -6,7 +6,7 @@ is verified through a **deterministic state contract** — never by sampling
 pixels. Unit tests use Node's built-in runner — **zero dependencies**:
 
 ```
-npm test           # node --test over tests/*.test.js   (214 tests, ~2.5s)
+npm test           # node --test over tests/*.test.js   (219 tests, ~2.5s)
 npm run test:e2e   # Playwright contract play-throughs   (13 tests, ~6.3s, dev-only)
 npm run validate   # check the map against its invariants
 node tools/simulate.js [games] [seed]   # play full AI-vs-AI games
@@ -16,7 +16,7 @@ node tools/simulate.js [games] [seed]   # play full AI-vs-AI games
 > so the script globs `tests/*.test.js` explicitly (a shell glob, so CI on Node
 > 20 works too — see [[log]] 2026-05-30 deploy corrections).
 
-## Unit suites (214 tests total)
+## Unit suites (219 tests total)
 - **`scoring.test.js`** (13) — route points, ticket completion, longest path,
   `finalScores` incl. longest-path ties. See [[scoring]].
 - **`rules.test.js`** (34) — `canClaimRoute` (colored/gray/wild, trains, double
@@ -47,6 +47,13 @@ node tools/simulate.js [games] [seed]   # play full AI-vs-AI games
   active human's own hand may show (masked hands never leak), claimed routes
   carry no level, claimable outranks affordable, null-safe. `render.js` is
   import-safe under Node, so the policy unit-tests with no browser. See [[ui]].
+- **`pulsePath.test.js`** (5) — the **pure per-square pulse layout**
+  (`src/ui/render.js:pathSlotLayout(routeIds, startCity, getRoute)`) behind the
+  traveling ticket pulse (G2): forward routes keep DOM slot order; a route
+  entered at its `to` end contributes its slots in **reversed** DOM order so
+  distances march source→dest along the actual walk; centers strictly increase
+  across a multi-route walk; unknown route ids are skipped without breaking
+  distances; empty/null input is safe. See [[ui]].
 - **`history.test.js`** (9) — the **undo/redo recorder/player** (`history.js`):
   state as a pure replay of the tape prefix, undo skipping AI to the previous
   human action, redo, and branch-on-new-action (truncate at the cursor). See
@@ -118,6 +125,17 @@ inspecting the canvas:
 sample with a wrong picture proves nothing. It has been fully replaced by
 deterministic, contract-based play-throughs. See [[browser-verify]] and [[log]]
 (2026-06-06).
+
+### Verifying motion: one-off structured observation
+The instant-mode e2e gate deliberately cannot see motion (`isInstantMode()`
+collapses it). When a change is *about* motion — e.g. G2's per-square pulse —
+the technique is a **one-off structured observation in a real browser**, not a
+new flaky test: drive the app outside instant mode, read *structured* facts at
+two instants (which slot indices carry a `--pulse` value, at what opacity) and
+assert the delta — e.g. lit slot indices advanced 98,99 → 100,101 across a
+400ms gap, peak opacity 0.385 (see [[log]] 2026-06-10 G2). The observation
+verifies the ship; the *permanent* gate stays the pure layout test
+(`pulsePath.test.js`) plus the instant-mode e2e. Motion is never a CI gate.
 
 ## e2e suites (13 tests, `npm run test:e2e`)
 Playwright, dev-only — the shipped game stays zero-dependency. Each test boots

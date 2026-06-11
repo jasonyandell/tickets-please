@@ -12,6 +12,10 @@ The page is no longer one always-on pane. `app.js` is a tiny **screen router**
 over `<section data-screen>` elements — one per screen
 (`menu | setup | game | gameover`); exactly one is `.active` (shown) at a time.
 `main.js` is a thin controller that shows the right screen and rebuilds it.
+Since G1 all screens (and the pass-device overlay) share the board's
+**transit-water world as a backdrop** — water gradient + soft landmass glows +
+faint grid, pure CSS — and screen cards get depth plus a train-car **rainbow
+stripe**, so the whole app reads as one game rather than forms around a board.
 
 `app.js` also OWNS the **Observable State Contract**:
 `window.__APP__ = { screen, viewModel, lastAction }` — the read-only snapshot the
@@ -37,15 +41,21 @@ over `<section data-screen>` elements — one per screen
   reduced to counts only). Both the UI and the e2e suite read this object.
   Imports pure geometry accessors from `geometry.js` (city/route accessors).
 - `app.js` — the screen router + the `window.__APP__` contract surface.
-- `screens/menu.js` — landing screen: branding, **Play**, and a How-to-play
-  panel that teaches the full ruleset (starting-ticket selection, the turn
-  choice, final round, +10 longest path).
-- `screens/setup.js` — game setup: player count (2–5), per-slot name +
-  **Human/AI** + color swatch, an optional advanced seed, then Start. Hands a
-  plain config object back to the controller.
+- `screens/menu.js` — a real **title screen** (G1): centered lockup with a
+  gently floating train mark (off under reduced-motion), a decorative
+  **route strip** of colored train cars on a track (the board's own visual
+  language, `aria-hidden`), a big **Play**, a How-to-play panel that teaches
+  the full ruleset (starting-ticket selection, the turn choice, final round,
+  +10 longest path), and a "Free · Public domain · Zero dependencies" footer.
+- `screens/setup.js` — the **"New Game"** screen: player count (2–5), per-slot
+  name + **Human/AI** + round color dot, an optional advanced seed, then Start.
+  Hands a plain config object back to the controller. Both `<select>`s are
+  kept deliberately — the e2e suite drives them via `selectOption`.
 - `screens/gameover.js` — the **endgame scoreboard**: a per-player breakdown
-  table (`Routes + Tickets + Longest = Total`, highest first), winner/tie line,
-  and New Game / Menu buttons. Pure DOM from `vm.scoreboard` + `vm.winnerIndex`.
+  table (`Routes + Tickets + Longest = Total`, highest first), the winner/tie
+  line carrying the **winner's color chip** (decorative, `aria-hidden`;
+  textContent consumers still read the full line), and New Game / Menu buttons.
+  Pure DOM from `vm.scoreboard` + `vm.winnerIndex` + `playerColor`.
 - `screens/passdevice.js` — the hotseat **pass-the-device** interstitial: a
   full-screen opaque overlay shown between two consecutive *human* turns so the
   incoming player can't glimpse the previous hand. Intentionally NOT a router
@@ -56,9 +66,11 @@ over `<section data-screen>` elements — one per screen
   `vm.canUndo`/`vm.canRedo`, self-explaining when there's nothing to undo/redo),
   the ticket-keep checklist, **live standings**, the face-up row (wilds render as
   the multicolor rainbow chip, and lock during the 2nd-card draw), per-player
-  blocks (privacy-masked, wild hand-pips also rainbow), and the log. There is no
-  card-color legend — colors are self-evident on the cards, so the panel dropped
-  it for space.
+  blocks (privacy-masked, wild hand-pips also rainbow), and the log. The
+  **active player's card carries a 2px ring in their own color** (`--p-color`
+  set per card, G3), composing with the color-coded left borders and banner so
+  the HUD itself says whose turn it is. There is no card-color legend — colors
+  are self-evident on the cards, so the panel dropped it for space.
 - `game/board.js` — SVG **interaction + route-clarity** layer: hover (or tap)
   any route and a tooltip near the cursor shows its cost, whether you can claim
   it, and — when you can't — exactly why. Routes are real DOM elements
@@ -85,10 +97,12 @@ over `<section data-screen>` elements — one per screen
   **fixed viewBox 1200×760** — no `resize()`, no `devicePixelRatio` code
   anywhere; CSS scales the SVG to any screen for free, eliminating the
   hidden-canvas blank-board race of the old canvas era. See *Board details*
-  below for V1/V2 features. Anim drivers mutate CSS custom properties
-  (`--pop-scale`, `--pop-flash`, `--pulse`) on route groups; `style.css` turns
-  those into transforms/opacity. Sets `svg.dataset.painted = "true"` after a
-  real render (the Observable State Contract smoke flag).
+  below for V1–V4 features. Anim drivers mutate CSS custom properties —
+  `--pop-scale`/`--pop-flash` on route groups, `--pulse` per car-wash element
+  (G2) — and `style.css` turns those into transforms/opacity. Also exports the
+  pure `pathSlotLayout` (per-square pulse walk) and `routeLevel` (V3 level
+  policy), both unit-tested directly. Sets `svg.dataset.painted = "true"` after
+  a real render (the Observable State Contract smoke flag).
 - `geometry.js` — **pure, testable geometry**: successor to `layout.js`. Computes
   car-slot rectangles (`routeSegments`), the perpendicular-offset single source
   (`parallelOffset` — used by both slots and the track line so they always agree),
@@ -242,16 +256,25 @@ of the turns you watch (`ticketViewerIndex` in `viewModel.js`):
 It's **privacy-safe**: it only ever shows the *human viewer's own* tickets — never
 the AI's, never another human's (unit-tested: empty whenever no viewer is set).
 
-### Traveling ticket pulse (Batch 10)
-On top of the static heat-map, a bright **`_-*-_` pulse glides source→dest** along
-each of the viewer's ticket paths at **constant velocity**, looping when it reaches
-the end — so a longer path takes proportionally longer to traverse. The motion is
-a pure function of time: `viewModel.js:ticketOrderedPaths` (`vm.ticketPaths`)
-gives each path's routes **oriented source→dest** (same Dijkstra as the weights),
-and `anim.js`'s `pulseCenter`/`bump`/`pulseIntensityAt` light each
-point by its wrap-aware distance to the moving center. The driver sets `--pulse`
-on each route's CSS custom property; `style.css` turns that into opacity on the
-`car-wash` overlay. It's **static in reduced-motion / test** (`isInstantMode`) —
+### Traveling ticket pulse (Batch 10, refined per-square in G2)
+On top of the static heat-map, a subtle **`_-^-_` pulse glides source→dest**
+along each of the viewer's ticket paths at **constant velocity**, looping when
+it reaches the end — so a longer path takes proportionally longer to traverse.
+Since G2 it travels **square-by-square**: each individual car slot on the path
+gets its own intensity from the pure pulse model, by its own distance along the
+walk — not whole routes lighting as blocks. The slot layout is pure and
+unit-tested: `src/ui/render.js:pathSlotLayout(routeIds, startCity, getRoute)`
+walks the path and **reverses a route's DOM slot order when the path enters it
+at its `to` end**, so slot distances always march source→dest along the actual
+walk (`tests/pulsePath.test.js`, 5 tests). The motion is a pure function of
+time: `viewModel.js:ticketOrderedPaths` (`vm.ticketPaths`) gives each path's
+routes oriented source→dest (same Dijkstra as the weights), and `anim.js`'s
+`pulseCenter`/`bump`/`pulseIntensityAt` light each slot by its wrap-aware
+distance to the moving center. The driver sets `--pulse` on each slot's
+**wash element**, which overrides the group-inherited value inside the same
+`max()` the wash already uses (zero CSS change for the per-square upgrade).
+Amplitude is deliberately capped at **0.45** — a hint gliding along your path,
+never a flash. It's **static in reduced-motion / test** (`isInstantMode`) —
 the durable read is the static heat-map, so the gate never depends on motion —
 and privacy-scoped identically to the heat-map (a pulse never traces a hidden
 opponent ticket).
@@ -340,6 +363,10 @@ Pure unit tests are the primary gate (see [[testing]]):
   (`render.js:routeLevel`): claimable only on a human turn (AI turns never show
   a go signal), affordable only when the active human's hand may show (no
   leak), claimed = no level, claimable outranks affordable, null-safe.
+- `tests/pulsePath.test.js` (5) — the **pure per-square pulse layout**
+  (`render.js:pathSlotLayout`): forward slot order, DOM-order reversal when a
+  route is entered at its `to` end, strictly increasing centers across a
+  multi-route walk, unknown routes skipped defensively, empty/null safe.
 - `tests/history.test.js` (9) — the **undo/redo recorder**: replay-of-prefix,
   undo skips AI to the previous human action, redo, and branch-on-new-action.
 - `tests/anim.test.js` (22) — the **pure frame model** (frame/pulse/pop +

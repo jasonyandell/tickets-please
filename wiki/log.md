@@ -400,3 +400,61 @@ recorded a stale count; the real file has 21: 15 V0 + 4 V1 + 2 V2),
 per-file counts verified by running each suite (they sum to 214).
 **Lint:** no orphan pages, no dangling `[[links]]` (only the intentional literal
 examples in [[CLAUDE]]), every page reachable from [[index]].
+
+### 2026-06-10 — Overhaul G1: screens get game-feel · commit `bddc9ce`
+Menu / setup / game-over / pass-device now share the board's **transit-water
+world as a backdrop** (water gradient + soft landmass glows + faint grid —
+pure CSS, zero JS); screen cards get depth and a train-car **rainbow stripe**.
+The menu is a real **title screen**: centered lockup with a gently floating
+train mark (off under reduced-motion), a decorative route strip of colored
+cars on a track, big Play, "Free · Public domain · Zero dependencies" footer.
+Setup retitled **"New Game"** with round color dots; the game-over winner line
+carries the **winner's color chip** (decorative `aria-hidden` swatch +
+text node, so textContent consumers still read the full line). Both
+`<select>`s deliberately kept — e2e drives them via `selectOption`; every
+`data-action`/`data-testid` hook intact.
+**Counts (observed before commit):** 214/214 unit, 13/13 e2e (6.5s); menu,
+setup, gameover screenshots eyeballed. → [[ui]].
+
+### 2026-06-10 — Overhaul G2: per-square ticket pulse · commit `58f6bc9`
+The user's fix: the `_-^-_` bump now lights **individual car slots** by their
+own distance along the walk, not whole routes as blocks. Pure
+**`pathSlotLayout(routeIds, startCity, getRoute)`** exported from `render.js`
+walks the path and **reverses a route's DOM slot order when entered at its
+`to` end**, so distances march source→dest (new `tests/pulsePath.test.js`,
+5 tests: orientation reversal, monotonic centers, defensive skips). The driver
+sets `--pulse` per **wash element**, overriding the group value inside the
+existing `max()` — zero CSS change. Amplitude capped at **0.45** (was 0.9) —
+a hint, not a flash.
+**Verified by structured observation in a real browser** (not instant mode —
+the gate deliberately can't see motion): lit slot indices advanced
+98,99 → 100,101 across a 400ms gap on every path, peak opacity 0.385; zoomed
+screenshots eyeballed. Technique documented in [[testing]].
+**Counts (observed before commit):** 219/219 unit, 13/13 e2e (6.4s).
+→ [[ui]], [[testing]].
+
+### 2026-06-10 — Overhaul G3: HUD ring · commit `671a2c1`
+Small finisher: the **active player's panel card gets a 2px ring in their own
+color** (`--p-color` set per card), composing with the existing color-coded
+left borders and banner — the HUD itself now says whose turn it is.
+**Counts (observed before commit):** 219/219 unit, 13/13 e2e (6.4s),
+screenshot eyeballed. → [[ui]].
+
+**This completes the visual overhaul arc** (V0–V4 substrate/theme + G1–G3
+game-feel): the app now reads as a simple, polished game end-to-end — title
+screen → New Game → a transit-map board that tells you what matters → a
+scoreboard with a winner's chip — all on the same verifiable spine, gate never
+broken.
+
+### 2026-06-10 — Wiki sweep #5 (lint)
+Reconciled wiki to Overhaul G1–G3. Pages changed: [[ui]] (screens section
+rewritten for the title screen / New Game / winner chip / shared transit-water
+backdrop; panel ring; pulse section rewritten per-square with `pathSlotLayout`;
+render.js bullet updated — `--pulse` is per wash element now; pulsePath test
+listed), [[testing]] (214→**219** unit; `pulsePath.test.js` entry; new
+"verifying motion: one-off structured observation" section), [[log]] (G1/G2/G3
+entries + the overhaul-arc completion note above).
+**Counts re-run:** `npm test` → **219/219** (~2.3s wall time, observed).
+e2e per the commit gates: **13/13** (~6.4s).
+**Lint:** no orphan pages, no dangling `[[links]]` (only the intentional literal
+examples in [[CLAUDE]]), every page reachable from [[index]].
