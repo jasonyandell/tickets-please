@@ -372,6 +372,10 @@ button.primary:hover:not(:disabled) { background: linear-gradient(180deg, var(--
   margin-bottom: 4px;
 }
 .phead.active { background: #fff7e0; border-radius: var(--radius-sm); padding: 2px 4px; }
+/* The active player's whole card owns the turn: a ring in their color. */
+.player.active {
+  box-shadow: var(--shadow-sm), 0 0 0 2px var(--p-color, var(--accent));
+}
 .score { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--ink-muted); }
 
 .hand {

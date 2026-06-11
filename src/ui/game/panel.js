@@ -367,6 +367,8 @@ function buildPlayerBlock(p, gameOver) {
   const block = el('div', 'player');
   block.dataset.testid = `player-${p.index}`;
   block.style.borderLeftColor = playerColor(p.index);
+  block.style.setProperty('--p-color', playerColor(p.index));
+  if (p.isActive) block.classList.add('active');
 
   const head = el('div', 'phead');
   if (p.isActive) head.classList.add('active');
