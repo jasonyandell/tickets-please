@@ -1,6 +1,7 @@
 // screens/gameover.js — the endgame scoreboard.
 //
-// Pure DOM construction from the view-model alone (no engine knowledge). It reads
+// Pure DOM construction from the view-model alone (no engine knowledge),
+// plus playerColor for the winner's color chip. It reads
 // `vm.scoreboard` (rows derived from finalScores: routePoints / ticketPoints /
 // longestBonus / total / completedTickets / longestPath, pre-sorted highest-first)
 // and `vm.winnerIndex` to render a per-player breakdown table, highlight the
@@ -12,6 +13,8 @@
 //   [data-testid="final-score-{index}"] — each player's row
 //   [data-testid="final-total-{index}"] — each player's total cell
 //   button[data-action="new-game"|"menu"]
+
+import { playerColor } from '../render.js';
 
 /**
  * @param {HTMLElement} container - the [data-screen="gameover"] section.
@@ -33,7 +36,15 @@ export function renderGameOver(container, vm, { onNewGame, onMenu }) {
 
   const who = el('div', 'over-winner');
   who.dataset.testid = 'winner';
-  who.textContent = winnerText(rows, winnerIndex);
+  // Winner color chip (decorative) + the summary text. textContent-only
+  // consumers still read the full line via the trailing text node.
+  if (winnerIndex != null && rows.some((r) => r.index === winnerIndex)) {
+    const chip = el('span', 'swatch');
+    chip.style.background = playerColor(winnerIndex);
+    chip.setAttribute('aria-hidden', 'true');
+    who.appendChild(chip);
+  }
+  who.appendChild(document.createTextNode(winnerText(rows, winnerIndex)));
   card.appendChild(who);
 
   if (rows.length > 0) {

@@ -951,3 +951,130 @@ button.link {
   dominant-baseline: middle;
 }
 /* === end SVG board === */
+
+/* ============================================================
+   Game screens (G1) — title-screen treatment for menu / setup /
+   game-over: the board's own transit-water world as a backdrop,
+   cards with a train-car rainbow stripe, and a real title lockup.
+   CSS-only game-feel; every data-action/data-testid hook intact.
+   ============================================================ */
+
+/* Shared backdrop: water gradient + two soft landmass blobs + a faint grid —
+   the same visual language as the board, so screens feel like one game. */
+[data-screen="menu"].active,
+[data-screen="setup"].active,
+[data-screen="gameover"].active {
+  background:
+    radial-gradient(420px 280px at 18% 20%, var(--map-land) 0%, transparent 70%),
+    radial-gradient(540px 360px at 84% 80%, var(--map-land) 0%, transparent 70%),
+    repeating-linear-gradient(0deg, transparent 0 63px, rgba(255, 255, 255, 0.45) 63px 64px),
+    repeating-linear-gradient(90deg, transparent 0 63px, rgba(255, 255, 255, 0.45) 63px 64px),
+    linear-gradient(180deg, var(--map-water) 0%, var(--map-water-edge) 100%);
+}
+
+/* Cards: deeper stage presence + a train-car rainbow stripe along the top. */
+.menu-card, .setup-card, .over-card, .passdevice-card {
+  border: none;
+  border-radius: 16px;
+  box-shadow: 0 12px 40px rgba(29, 36, 43, 0.18), 0 2px 8px rgba(29, 36, 43, 0.1);
+}
+.passdevice-card { position: relative; overflow: hidden; }
+.menu-card::before, .setup-card::before, .over-card::before, .passdevice-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 5px;
+  background: linear-gradient(90deg,
+    var(--card-red), var(--card-orange), var(--card-yellow),
+    var(--card-green), var(--card-blue), var(--card-purple));
+}
+
+/* --- Title screen ----------------------------------------------------------- */
+.menu-card { text-align: center; align-items: center; gap: 14px; padding-top: 34px; }
+.menu-title.wordmark {
+  justify-content: center;
+  border-bottom: none;
+  padding-bottom: 0;
+  font-size: 46px;
+}
+.wordmark-mark { animation: trainFloat 3.2s ease-in-out infinite; }
+@keyframes trainFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+.menu-tagline { max-width: 340px; }
+
+/* The decorative stretch of track with colored cars. */
+.route-strip {
+  position: relative;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 8px 0 4px;
+}
+.route-strip::before {
+  content: '';
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  top: 50%;
+  height: 4px;
+  margin-top: 0;
+  border-radius: 2px;
+  background: var(--track);
+}
+.rs-car {
+  position: relative;
+  width: 26px;
+  height: 14px;
+  border-radius: 3px;
+  background: var(--c, var(--card-gray));
+  border: 1px solid rgba(0, 0, 0, 0.28);
+  box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.menu-card button.primary.big {
+  width: 72%;
+  font-size: 18px;
+  padding: 13px 16px;
+  border-radius: 10px;
+}
+.menu-card button.link { align-self: center; }
+.menu-card .menu-how { text-align: left; width: 100%; }
+.menu-foot {
+  margin: 2px 0 0;
+  font-size: var(--text-xs);
+  color: var(--ink-subtle);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* --- Setup ("New Game") ------------------------------------------------------ */
+.setup-slot .swatch { width: 16px; height: 16px; border-radius: 50%; }
+.setup-slot input, .setup-slot select, .setup-row select {
+  border-radius: var(--radius-lg);
+  padding: 7px 9px;
+}
+
+/* --- Game over --------------------------------------------------------------- */
+.over-winner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 20px;
+}
+.over-winner .swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(0, 0, 0, 0.25);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wordmark-mark { animation: none; }
+}
+/* === end game screens === */

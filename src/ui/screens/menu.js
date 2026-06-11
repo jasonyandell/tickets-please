@@ -30,6 +30,19 @@ export function renderMenu(container, { onPlay }) {
     'A public-domain railway game for 2–5 players on one machine — any mix of humans and AI.';
   card.appendChild(tagline);
 
+  // Decorative route strip: a little stretch of track with colored train cars —
+  // the board's own visual language, echoed on the title screen. Pure CSS food.
+  const strip = document.createElement('div');
+  strip.className = 'route-strip';
+  strip.setAttribute('aria-hidden', 'true');
+  for (const c of ['red', 'orange', 'yellow', 'green', 'blue', 'purple']) {
+    const car = document.createElement('span');
+    car.className = 'rs-car';
+    car.style.setProperty('--c', `var(--card-${c})`);
+    strip.appendChild(car);
+  }
+  card.appendChild(strip);
+
   const play = document.createElement('button');
   play.className = 'primary big';
   play.dataset.action = 'play';
@@ -70,6 +83,11 @@ export function renderMenu(container, { onPlay }) {
     how.hidden = !how.hidden;
     howBtn.textContent = how.hidden ? 'How to play' : 'Hide how to play';
   });
+
+  const foot = document.createElement('p');
+  foot.className = 'menu-foot';
+  foot.textContent = 'Free · Public domain · Zero dependencies';
+  card.appendChild(foot);
 
   container.appendChild(card);
 }

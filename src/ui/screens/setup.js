@@ -22,7 +22,7 @@ export function renderSetup(container, { onStart, onBack }) {
 
   const h = document.createElement('h1');
   h.className = 'setup-title';
-  h.textContent = 'Game setup';
+  h.textContent = 'New Game';
   card.appendChild(h);
 
   // --- Player count -------------------------------------------------------
