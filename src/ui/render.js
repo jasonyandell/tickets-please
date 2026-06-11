@@ -198,8 +198,8 @@ let popCount = 0;
 let popAnimator = null;
 let popping = new Set();
 let pulseAnimator = null;
-let pulseLit = new Set();
-let pulseSegs = []; // [{ pathLength, segs: [{ idStr, center }] }]
+let pulseLit = new Set();   // Set<Element> — wash rects lit by the last frame
+let pulsePaths = [];        // [{ pathLength, slots: [{ wash, center }] }]
 
 function buildSkeleton(svg, map) {
   svg.textContent = '';
@@ -251,10 +251,9 @@ function buildSkeleton(svg, map) {
   // --- routes ---------------------------------------------------------------
   const routesLayer = el('g', { class: 'routes-layer' }, svg);
   const routeEls = new Map();
-  const routeLen = new Map();
+  const routeMeta = new Map(); // idStr -> { from, to, len, washes[] } (pulse layout)
   for (const rl of layout.routes) {
     const idStr = String(rl.id);
-    routeLen.set(idStr, routeLength(rl.route));
     const g = el('g', {
       class: 'route',
       'data-route-id': idStr,
@@ -285,8 +284,10 @@ function buildSkeleton(svg, map) {
     for (const box of rl.boxes) el('rect', { class: 'car', ...rectAttrs(box) }, g);
     // Wash overlay: one per slot, ON TOP of the cars. Carries the heat-map
     // ring (stroke, keyed by data-ticket-weight) and the pop-flash / pulse
-    // wash (white fill whose opacity is max(--pop-flash, --pulse)).
-    for (const box of rl.boxes) el('rect', { class: 'car-wash', ...rectAttrs(box) }, g);
+    // wash (white fill whose opacity is max(--pop-flash, --pulse)). Collected
+    // in routeFrom→routeTo slot order so the pulse can address slot k directly.
+    const washes = [];
+    for (const box of rl.boxes) washes.push(el('rect', { class: 'car-wash', ...rectAttrs(box) }, g));
 
     // Owner mark on the middle slot: a small light disc ringed in the owner's
     // color bearing their initial. Hidden by CSS until data-claimed="true".
@@ -298,6 +299,12 @@ function buildSkeleton(svg, map) {
       txt.textContent = '';
     }
     routeEls.set(idStr, g);
+    routeMeta.set(idStr, {
+      from: String(routeFrom(rl.route)),
+      to: String(routeTo(rl.route)),
+      len: routeLength(rl.route),
+      washes,
+    });
   }
 
   // --- cities ----------------------------------------------------------------
@@ -325,7 +332,7 @@ function buildSkeleton(svg, map) {
   }
 
   svg.dataset.cities = String(layout.cities.length);
-  B = { svg, map, layout, routeEls, routeLen };
+  B = { svg, map, layout, routeEls, routeMeta };
   syncAnimFlags();
 }
 
@@ -390,32 +397,32 @@ function triggerPops(claimedRids) {
   } catch (_) { /* animation must never break a render */ }
 }
 
-// Per-frame pulse update: light each route on a viewer ticket path by the pure
-// pulse model's intensity at its position along the path. The `_-*-_` bump
-// glides source→dest at constant velocity, looping (clock: performance.now()).
+// How bright the pulse peak is allowed to get. Deliberately SUBTLE: the bump
+// should read as a hint gliding along your path, never a flashing block.
+const PULSE_MAX_OPACITY = 0.45;
+
+// Per-frame pulse update, per SQUARE: each individual car slot on a viewer
+// ticket path gets its own intensity from the pure pulse model, by its own
+// distance along the walk — so the `_-^-_` bump travels square-by-square
+// instead of lighting whole routes as blocks. The per-element --pulse
+// overrides the group-inherited value in the same max() the wash already uses.
 function pulseFrame() {
   if (!B) return;
   const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
   const lit = new Set();
-  for (const path of pulseSegs) {
-    for (const s of path.segs) {
+  for (const path of pulsePaths) {
+    for (const s of path.slots) {
       const intensity = pulseIntensityAt(now, path.pathLength, s.center, {
         velocity: PULSE_VELOCITY,
         halfWidth: PULSE_HALF_WIDTH,
       });
-      if (intensity <= 0.02) continue;
-      const g = B.routeEls.get(s.idStr);
-      if (g) {
-        g.style.setProperty('--pulse', String(Math.min(1, 0.9 * intensity)));
-        lit.add(s.idStr);
-      }
+      if (intensity <= 0.04 || !s.wash) continue;
+      s.wash.style.setProperty('--pulse', (PULSE_MAX_OPACITY * intensity).toFixed(3));
+      lit.add(s.wash);
     }
   }
-  for (const idStr of pulseLit) {
-    if (!lit.has(idStr)) {
-      const g = B.routeEls.get(idStr);
-      if (g) g.style.removeProperty('--pulse');
-    }
+  for (const wash of pulseLit) {
+    if (!lit.has(wash)) wash.style.removeProperty('--pulse');
   }
   pulseLit = lit;
 }
@@ -431,33 +438,62 @@ function syncPulseDriver(shouldRun) {
       pulseAnimator.start();
     } else if (pulseAnimator) {
       pulseAnimator.stop();
-      for (const idStr of pulseLit) {
-        const g = B && B.routeEls.get(idStr);
-        if (g) g.style.removeProperty('--pulse');
-      }
+      for (const wash of pulseLit) wash.style.removeProperty('--pulse');
       pulseLit = new Set();
     }
   } catch (_) { /* animation must never break a render */ }
 }
 
-// Lay each viewer ticket path out in path-distance units: every route occupies
-// [acc, acc+len]; its center is its midpoint. (Same model the canvas drew.)
-function computePulseSegs(vm) {
+// Lay a ticket path out PER SLOT in path-distance units (pure; exported for
+// unit tests). Walks routeIds from startCity: a route entered at its `to` end
+// contributes its slots in REVERSED DOM order, so slot distances always march
+// source→dest along the actual walk. getRoute(idStr) → { from, to, length,
+// slots } | null; unknown routes are skipped (defensive).
+// Returns { pathLength, slots: [{ id, domIndex, center }] }.
+export function pathSlotLayout(routeIds, startCity, getRoute) {
+  const slots = [];
+  let acc = 0;
+  let cur = String(startCity);
+  for (const rid of routeIds || []) {
+    const r = getRoute(String(rid));
+    if (!r) continue;
+    const forward = String(r.from) === cur;
+    const n = Math.max(1, r.slots | 0);
+    const step = r.length / n;
+    for (let k = 0; k < n; k++) {
+      slots.push({
+        id: String(rid),
+        domIndex: forward ? k : n - 1 - k,
+        center: acc + (k + 0.5) * step,
+      });
+    }
+    cur = forward ? String(r.to) : String(r.from);
+    acc += r.length;
+  }
+  return { pathLength: acc, slots };
+}
+
+// Bind the pure layout to this board's wash elements.
+function computePulsePaths(vm) {
   const out = [];
   const paths = vm && Array.isArray(vm.ticketPaths) ? vm.ticketPaths : [];
   if (!B) return out;
+  const getRoute = (idStr) => {
+    const m = B.routeMeta.get(idStr);
+    return m ? { from: m.from, to: m.to, length: m.len, slots: m.washes.length } : null;
+  };
   for (const path of paths) {
-    const ids = path && Array.isArray(path.routeIds) ? path.routeIds : path;
-    if (!Array.isArray(ids) || ids.length === 0) continue;
-    const segs = [];
-    let pathLength = 0;
-    for (const rid of ids) {
-      const idStr = String(rid);
-      const len = B.routeLen.get(idStr) || 1;
-      segs.push({ idStr, center: pathLength + len / 2 });
-      pathLength += len;
-    }
-    if (pathLength > 0) out.push({ pathLength, segs });
+    const ids = path && Array.isArray(path.routeIds) ? path.routeIds : null;
+    if (!ids || ids.length === 0) continue;
+    const laid = pathSlotLayout(ids, path.from, getRoute);
+    if (laid.pathLength <= 0) continue;
+    out.push({
+      pathLength: laid.pathLength,
+      slots: laid.slots.map((s) => ({
+        center: s.center,
+        wash: (B.routeMeta.get(s.id) || { washes: [] }).washes[s.domIndex] || null,
+      })),
+    });
   }
   return out;
 }
@@ -537,9 +573,9 @@ export function renderBoard(svg, map, vm) {
   // Pop any route claimed since the last render.
   triggerPops(claimedRids);
 
-  // Traveling ticket pulse over the viewer's ordered paths.
-  pulseSegs = computePulseSegs(vm);
-  syncPulseDriver(pulseSegs.length > 0 && !isInstantMode());
+  // Traveling ticket pulse over the viewer's ordered paths, square-by-square.
+  pulsePaths = computePulsePaths(vm);
+  syncPulseDriver(pulsePaths.length > 0 && !isInstantMode());
 
   // Observable State Contract — the board has rendered real elements.
   svg.dataset.painted = 'true';
